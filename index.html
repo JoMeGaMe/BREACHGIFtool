@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="description" content="上傳圖片、框選區塊、輸入文字，產生雜訊亂碼後黑屏的駭入動畫 GIF。">
+<meta name="description" content="上傳圖片、框選區塊、輸入文字，產生雜訊亂碼後黑屏或換圖的 GIF 動畫。">
 <title>Breach GIF 雜訊動畫產生器</title>
 <style>
 @font-face{font-family:"Chakra Petch";font-weight:600;font-style:normal;font-display:swap;src:url(fonts/chakra-petch-600.woff) format("woff")}
@@ -113,22 +113,28 @@ input[type=range]{accent-color:var(--accent);width:100%}
 .result-head strong{font-family:var(--f-display);font-weight:600;letter-spacing:.06em;font-size:15px}
 .result img{display:block;max-width:100%;height:auto;max-height:60vh;margin:0 auto;border-radius:3px}
 .err{color:var(--danger)}
+.seg{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--line);border-radius:4px;overflow:hidden}
+.seg button{background:var(--raise);border:0;padding:9px 6px;font-size:13.5px;color:var(--fg)}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button[aria-pressed=true]{background:var(--accent);color:var(--accent-ink);font-weight:700}
+.app.mode-black .only-swap,.app.mode-swap .only-black{display:none!important}
+.chips{display:flex;gap:6px;flex-wrap:wrap;min-width:0}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
 <body>
 
 
-<div class="app">
+<div class="app mode-black" id="app">
   <header class="top">
     <div class="brand"><span class="mark">BREACH<b>.GIF</b></span><h1>雜訊動畫產生器</h1></div>
-    <p class="lede">上傳圖片、框出要被入侵的區塊、輸入文字，產生「雜訊 → 亂碼 → 黑屏」的 GIF 動畫。<br><span class="privacy">所有處理都在你的瀏覽器內完成，圖片與文字不會上傳到任何伺服器，也不會被保存。</span></p>
+    <p class="lede">上傳圖片、框出要被入侵的區塊、輸入文字，產生「雜訊 → 亂碼 → 黑屏」，或「雜訊 → 換成另一張圖」的 GIF 動畫。<br><span class="privacy">所有處理都在你的瀏覽器內完成，圖片與文字不會上傳到任何伺服器，也不會被保存。</span></p>
   </header>
 
   <main class="layout">
     <section class="stage">
       <div class="stage-bar">
-        <span class="chip" id="srcLabel">範例圖片</span>
+        <div class="chips"><span class="chip" id="srcLabel">範例圖片</span><span class="chip only-swap" id="src2Label">第二張：範例</span></div>
         <span class="mono" id="dims"></span>
       </div>
       <div class="monitor" id="monitor">
@@ -160,12 +166,44 @@ input[type=range]{accent-color:var(--accent);width:100%}
 
     <aside class="panel" aria-label="設定">
       <div class="group">
-        <h2>圖片</h2>
+        <h2>模式</h2>
+        <div class="seg" role="group" aria-label="動畫模式">
+          <button type="button" data-mode="black" aria-pressed="true">駭入黑屏</button>
+          <button type="button" data-mode="swap" aria-pressed="false">雜訊換圖</button>
+        </div>
+        <p class="hint" id="modeHint">雜訊與亂碼過後，區塊黑屏並顯示文字。</p>
+      </div>
+
+      <div class="group">
+        <h2><span class="only-swap">第一張</span>圖片</h2>
         <div class="row">
           <button class="btn" id="upload" type="button">上傳圖片</button>
           <button class="btn" id="useSample" type="button">使用範例</button>
         </div>
         <p class="hint">也可以直接把圖片拖到畫面上，或按 Ctrl/⌘+V 貼上。</p>
+      </div>
+
+      <div class="group only-swap">
+        <h2>第二張圖片</h2>
+        <div class="row">
+          <button class="btn" id="upload2" type="button">上傳第二張</button>
+          <button class="btn" id="useSample2" type="button">使用範例</button>
+        </div>
+        <div class="two">
+          <label class="field"><span>放進區塊的方式</span>
+            <select id="align">
+              <option value="cover">縮放填滿區塊</option>
+              <option value="same">和第一張同位置</option>
+            </select>
+          </label>
+          <label class="field"><span>換圖之後</span>
+            <select id="after">
+              <option value="clean">逐漸變清晰</option>
+              <option value="noisy">持續帶有雜訊</option>
+            </select>
+          </label>
+        </div>
+        <p class="hint">「和第一張同位置」適合兩張尺寸相同的前後對照圖，會裁出同一塊位置。</p>
       </div>
 
       <div class="group">
@@ -180,7 +218,9 @@ input[type=range]{accent-color:var(--accent);width:100%}
         <h2>文字</h2>
         <label class="field"><span>主文字</span><input type="text" id="main" maxlength="40" value="SYSTEM HACKED"></label>
         <label class="field"><span>副文字<em>留空則不顯示</em></span><input type="text" id="sub" maxlength="60" value="所有資料已被加密"></label>
-        <label class="check"><input type="checkbox" id="type" checked>黑屏後以打字效果出現</label>
+        <label class="check only-swap"><input type="checkbox" id="showText">換圖後顯示文字</label>
+        <label class="check"><input type="checkbox" id="type" checked>以打字效果出現</label>
+        <label class="field"><span>文字顯示時間<em id="textDurV"></em></span><input type="range" id="textDur" min="0" max="6" step="0.5" value="0"></label>
       </div>
 
       <div class="group">
@@ -204,7 +244,7 @@ input[type=range]{accent-color:var(--accent);width:100%}
               <option value="moji">中文亂碼</option>
             </select>
           </label>
-          <label class="field"><span>黑屏方式</span>
+          <label class="field only-black"><span>黑屏方式</span>
             <select id="off">
               <option value="crt">CRT 關機</option>
               <option value="fade">漸暗</option>
@@ -220,7 +260,7 @@ input[type=range]{accent-color:var(--accent);width:100%}
         <h2>時間與輸出</h2>
         <label class="field"><span>開始前停留<em id="preV"></em></span><input type="range" id="pre" min="0" max="5" step="0.5" value="1"></label>
         <label class="field"><span>入侵過程<em id="durV"></em></span><input type="range" id="dur" min="1.5" max="8" step="0.5" value="3.5"></label>
-        <label class="field"><span>黑屏停留<em id="holdV"></em></span><input type="range" id="hold" min="0" max="5" step="0.5" value="2"></label>
+        <label class="field"><span><b id="holdLabel" style="font-weight:inherit">黑屏停留</b><em id="holdV"></em></span><input type="range" id="hold" min="0" max="5" step="0.5" value="2"></label>
         <div class="two">
           <label class="field"><span>每秒幀數</span>
             <select id="fps"><option value="10">10 fps</option><option value="15" selected>15 fps</option><option value="20">20 fps</option></select>
@@ -243,6 +283,7 @@ input[type=range]{accent-color:var(--accent);width:100%}
   </main>
 </div>
 <input type="file" id="file" accept="image/*" hidden>
+<input type="file" id="file2" accept="image/*" hidden>
 
 <script>
 (() => {
@@ -258,8 +299,8 @@ const CHARSETS = {
 };
 
 const opt = { main:'SYSTEM HACKED', sub:'所有資料已被加密', type:true, accent:'#3dff8b', charset:'mix', off:'crt',
-  amp:1, pre:1, dur:3.5, hold:2, fps:15, loop:true, width:480, seed:7 };
-let src = null;
+  amp:1, pre:1, dur:3.5, hold:2, mode:'black', showText:false, textDur:0, after:'clean', align:'cover', fps:15, loop:true, width:480, seed:7 };
+let src = null, src2 = null;
 let region = { x:150/960, y:90/600, w:440/960, h:210/600 };
 let P = null;
 let N = 2, cur = 0, playing = false, raf = 0, t0 = 0, f0 = 0, busy = false;
@@ -307,7 +348,37 @@ function drawSample(){
   return c;
 }
 
+function drawSample2(){
+  const c = mk(960,600), g = c.getContext('2d'), r = mulberry(7);
+  let gr = g.createLinearGradient(0,0,960,600);
+  gr.addColorStop(0,'#14000a'); gr.addColorStop(1,'#4a0420');
+  g.fillStyle = gr; g.fillRect(0,0,960,600);
+  g.strokeStyle = 'rgba(255,60,100,.18)'; g.lineWidth = 1;
+  for (let x = 0; x < 960; x += 32){ g.beginPath(); g.moveTo(x+.5,0); g.lineTo(x+.5,600); g.stroke(); }
+  for (let y = 0; y < 600; y += 32){ g.beginPath(); g.moveTo(0,y+.5); g.lineTo(960,y+.5); g.stroke(); }
+  for (let i = 0; i < 40; i++){ g.fillStyle = `rgba(255,46,77,${.1 + r()*.3})`; g.fillRect(r()*960, r()*600, 20 + r()*120, 3 + r()*8); }
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillStyle = '#ff2e4d'; g.shadowColor = '#ff2e4d'; g.shadowBlur = 30;
+  g.font = '600 150px "Chakra Petch", sans-serif'; g.fillText('404 CREW', 480, 260);
+  g.shadowBlur = 0; g.fillStyle = '#ffffff';
+  g.font = '700 46px "Noto Sans TC", sans-serif'; g.fillText('這個看板現在是我們的了', 480, 370);
+  g.fillStyle = 'rgba(255,255,255,.6)'; g.font = '400 22px "IBM Plex Mono", monospace';
+  g.fillText('// signal hijacked @ 02:14:07', 480, 430);
+  return c;
+}
+
 /* ---------- prepare buffers ---------- */
+function makeSet(base){
+  const W = base.width, H = base.height;
+  const id = base.getContext('2d', { willReadFrequently:true }).getImageData(0,0,W,H);
+  const chan = k => { const c = mk(W,H), x = c.getContext('2d'), d = new ImageData(W,H), a = id.data, o = d.data;
+    for (let i = 0; i < a.length; i += 4){ o[i+k] = a[i+k]; o[i+3] = 255; } x.putImageData(d,0,0); return c; };
+  return { base, rC: chan(0), gC: chan(1), bC: chan(2) };
+}
+function coverDraw(g, img, x, y, w, h){
+  const [iw, ih] = dims(img), sc = Math.max(w/iw, h/ih), dw = iw*sc, dh = ih*sc;
+  g.drawImage(img, x + (w-dw)/2, y + (h-dh)/2, dw, dh);
+}
 function prepare(){
   const [iw, ih] = dims(src);
   let W = opt.width, H = Math.round(W * ih / iw);
@@ -315,22 +386,31 @@ function prepare(){
   W = Math.max(32, W); H = Math.max(32, H);
   const base = mk(W,H), bc = base.getContext('2d', { willReadFrequently:true });
   bc.imageSmoothingQuality = 'high'; bc.drawImage(src, 0, 0, W, H);
-  const id = bc.getImageData(0,0,W,H);
-  const chan = k => { const c = mk(W,H), x = c.getContext('2d'), d = new ImageData(W,H), a = id.data, o = d.data;
-    for (let i = 0; i < a.length; i += 4){ o[i+k] = a[i+k]; o[i+3] = 255; } x.putImageData(d,0,0); return c; };
-  const rC = chan(0), gC = chan(1), bC = chan(2);
+  const s1 = makeSet(base);
   const nr = mulberry(99), tiles = [];
   for (let t = 0; t < 3; t++){ const c = mk(128,128), x = c.getContext('2d'), d = x.createImageData(128,128);
     for (let i = 0; i < d.data.length; i += 4){ const v = nr()*255; d.data[i] = d.data[i+1] = d.data[i+2] = v; d.data[i+3] = 255; }
     x.putImageData(d,0,0); tiles.push(c); }
   const scan = mk(W,H), sx = scan.getContext('2d'), step = Math.max(2, Math.round(3 * W / 480));
   sx.fillStyle = '#000'; for (let y = 0; y < H; y += step) sx.fillRect(0, y, W, Math.max(1, step/3));
-  P = { W, H, base, rC, gC, bC, tiles, scan, scale: W/480 };
+  P = { W, H, s1, s2: null, s2dirty: true, cur: s1, tiles, scan, scale: W/480 };
   view.width = W; view.height = H;
   updateR(); fitView(); updateMeta();
 }
+function ensureS2(){
+  if (!P.s2dirty && P.s2) return;
+  if (!src2) src2 = drawSample2();
+  const { W, H, R } = P, c = mk(W,H), g = c.getContext('2d', { willReadFrequently:true });
+  g.drawImage(P.s1.base, 0, 0);
+  g.save(); g.beginPath(); g.rect(R.x, R.y, R.w, R.h); g.clip();
+  g.imageSmoothingQuality = 'high';
+  if (opt.align === 'same') coverDraw(g, src2, 0, 0, W, H); else coverDraw(g, src2, R.x, R.y, R.w, R.h);
+  g.restore();
+  P.s2 = makeSet(c); P.s2dirty = false;
+}
 function updateR(){
   const { W, H } = P;
+  P.s2dirty = true;
   const x = Math.round(region.x*W), y = Math.round(region.y*H);
   P.R = { x, y, w: Math.max(4, Math.min(W-x, Math.round(region.w*W))), h: Math.max(4, Math.min(H-y, Math.round(region.h*H))) };
 }
@@ -348,7 +428,7 @@ function fontSub(size){ return `500 ${size}px "Noto Sans TC","IBM Plex Mono",san
 function fit(ctx, text, fontFn, maxW, maxH){ ctx.font = fontFn(100); const w = ctx.measureText(text).width || 1; return Math.max(6, Math.min(maxH, 100 * maxW / w)); }
 
 function glitchText(ctx, r, K){
-  const R = P.R, txt = opt.main.trim(); if (!txt) return;
+  const R = P.R, txt = opt.main.trim(); if (!txt || !textOn()) return;
   const size = fit(ctx, txt, fontMain, R.w*.86, R.h*.3);
   const cx = R.x + R.w/2 + (r()-.5)*R.w*.06, cy = R.y + R.h*(.3 + r()*.4);
   ctx.font = fontMain(size); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -370,9 +450,9 @@ function glitch(ctx, r, k){
     const sh = (2 + K*14*(.4 + r()*.8)) * s, dy = (r()-.5)*K*5*s;
     ctx.fillStyle = '#000'; ctx.fillRect(R.x,R.y,R.w,R.h);
     ctx.globalCompositeOperation = 'lighter';
-    ctx.drawImage(P.rC, R.x,R.y,R.w,R.h, R.x+sh, R.y+dy, R.w,R.h);
-    ctx.drawImage(P.gC, R.x,R.y,R.w,R.h, R.x, R.y, R.w,R.h);
-    ctx.drawImage(P.bC, R.x,R.y,R.w,R.h, R.x-sh, R.y-dy, R.w,R.h);
+    ctx.drawImage(P.cur.rC, R.x,R.y,R.w,R.h, R.x+sh, R.y+dy, R.w,R.h);
+    ctx.drawImage(P.cur.gC, R.x,R.y,R.w,R.h, R.x, R.y, R.w,R.h);
+    ctx.drawImage(P.cur.bC, R.x,R.y,R.w,R.h, R.x-sh, R.y-dy, R.w,R.h);
     ctx.globalCompositeOperation = 'source-over';
   }
   const n = Math.floor(1 + K*4 + K*12*r());
@@ -380,7 +460,7 @@ function glitch(ctx, r, k){
     const hh = Math.max(1, 1 + r()*R.h*.1*(.3 + K));
     const sy = clamp(R.y + r()*R.h, 0, P.H - hh);
     const dx = (r()-.5)*R.w*.35*K;
-    const q = r(), img = q < .15 ? P.rC : q < .3 ? P.bC : P.base;
+    const q = r(), img = q < .15 ? P.cur.rC : q < .3 ? P.cur.bC : P.cur.base;
     ctx.drawImage(img, R.x, sy, R.w, hh, R.x + dx, sy, R.w, hh);
   }
   const nb = Math.floor(K*8*r());
@@ -388,7 +468,7 @@ function glitch(ctx, r, k){
     const bw = R.w*(.05 + r()*.28), bh = R.h*(.02 + r()*.12);
     const bx = R.x + r()*(R.w-bw), by = R.y + r()*(R.h-bh), t = r();
     if (t < .35){ ctx.globalAlpha = .45 + r()*.55; const c = r(); ctx.fillStyle = c < .5 ? opt.accent : c < .8 ? '#000' : '#fff'; ctx.fillRect(bx,by,bw,bh); ctx.globalAlpha = 1; }
-    else if (t < .7){ ctx.drawImage(P.base, R.x + r()*(R.w-bw), R.y + r()*(R.h-bh), bw, bh, bx, by, bw, bh); }
+    else if (t < .7){ ctx.drawImage(P.cur.base, R.x + r()*(R.w-bw), R.y + r()*(R.h-bh), bw, bh, bx, by, bw, bh); }
     else { ctx.drawImage(P.tiles[i%3], 0, 0, 40, 40*bh/bw || 4, bx, by, bw, bh); }
   }
   noiseFill(ctx, r, (.05 + .45*K) * (.5 + r()*.5));
@@ -439,7 +519,7 @@ function shutdown(ctx, r, k){
   const cx = R.x + R.w/2, cy = R.y + R.h/2;
   if (k < .55){
     const q = k/.55, h = Math.max(2*s, R.h*(1 - q*q));
-    ctx.drawImage(P.base, R.x,R.y,R.w,R.h, R.x, cy - h/2, R.w, h);
+    ctx.drawImage(P.cur.base, R.x,R.y,R.w,R.h, R.x, cy - h/2, R.w, h);
     noiseFill(ctx, r, .3);
     ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = Math.min(1, q*1.3);
     ctx.fillStyle = '#ffffff'; ctx.fillRect(R.x, cy - h/2, R.w, h);
@@ -453,11 +533,12 @@ function shutdown(ctx, r, k){
   }
 }
 
-function blackout(ctx, r, ht){
-  const R = P.R;
-  ctx.fillStyle = '#000'; ctx.fillRect(R.x,R.y,R.w,R.h);
-  noiseFill(ctx, r, .035);
-  const main = opt.main.trim(), sub = opt.sub.trim();
+const textOn = () => opt.mode === 'black' || opt.showText;
+
+function drawText(ctx, r, ht, backdrop){
+  const R = P.R, main = opt.main.trim(), sub = opt.sub.trim();
+  if (!main && !sub) return;
+  if (opt.textDur > 0){ if (ht > opt.textDur) return; if (ht > opt.textDur - .3 && r() < .5) return; }
   const mainChars = Array.from(main);
   const typeT = .07, typed = opt.type ? Math.min(mainChars.length, Math.floor(ht/typeT)) : mainChars.length;
   const doneAt = opt.type ? mainChars.length*typeT + .15 : 0;
@@ -467,6 +548,10 @@ function blackout(ctx, r, ht){
   const gap = size && size2 ? size*.35 : 0;
   const total = size + gap + size2;
   let y = R.y + R.h/2 - total/2;
+  if (backdrop){
+    const pad = Math.max(size, size2)*.45 + 4*P.scale;
+    ctx.fillStyle = 'rgba(0,0,0,.62)'; ctx.fillRect(R.x, y - pad, R.w, total + pad*2);
+  }
   ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
   if (main){
     ctx.font = fontMain(size);
@@ -490,26 +575,58 @@ function blackout(ctx, r, ht){
   }
   if (sub && ht >= doneAt){
     ctx.font = fontSub(size2); ctx.textAlign = 'center';
-    ctx.globalAlpha = .82; ctx.fillStyle = opt.accent;
+    ctx.globalAlpha = .85; ctx.fillStyle = opt.accent;
     ctx.fillText(sub, R.x + R.w/2, y + size2/2); ctx.globalAlpha = 1;
   }
+}
+
+function blackout(ctx, r, ht){
+  const R = P.R;
+  ctx.fillStyle = '#000'; ctx.fillRect(R.x,R.y,R.w,R.h);
+  noiseFill(ctx, r, .035);
+  drawText(ctx, r, ht, false);
   scanlines(ctx, .28);
 }
 
+function swapIn(ctx, r, k){
+  const R = P.R;
+  P.cur = r() < .2 + k*.9 ? P.s2 : P.s1;
+  ctx.drawImage(P.cur.base, R.x,R.y,R.w,R.h, R.x,R.y,R.w,R.h);
+  glitch(ctx, r, 1 - k*.35);
+  if (r() > k*.85) chaos(ctx, r, 1 - k);
+}
+
+function revealed(ctx, r, ht){
+  const R = P.R;
+  P.cur = P.s2;
+  ctx.drawImage(P.s2.base, R.x,R.y,R.w,R.h, R.x,R.y,R.w,R.h);
+  if (opt.after === 'clean'){
+    const k = Math.max(0, 1 - ht/.8);
+    if (k > 0 && r() < .35 + k) glitch(ctx, r, k*.85);
+  } else {
+    glitch(ctx, r, r() < .1 ? .75 : .22 + r()*.12);
+  }
+  if (textOn()) drawText(ctx, r, ht, true);
+}
+
 function renderFrame(ctx, f){
-  const ts = f / opt.fps - opt.pre, D = opt.dur, R = P.R;
+  const ts = f / opt.fps - opt.pre, D = opt.dur, R = P.R, swap = opt.mode === 'swap';
   const r = mulberry(opt.seed*1000003 + f*7919);
   ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; ctx.shadowBlur = 0;
-  ctx.drawImage(P.base, 0, 0);
+  P.cur = P.s1;
+  ctx.drawImage(P.s1.base, 0, 0);
   if (f === 0 || ts < 0) return;
+  if (swap) ensureS2();
   ctx.save(); ctx.beginPath(); ctx.rect(R.x,R.y,R.w,R.h); ctx.clip();
   if (ts < D){
     const p = ts / D;
     if (p < .15){ if (r() < .22) glitch(ctx, r, .12); }
     else if (p < .55) glitch(ctx, r, (p - .15)/.4);
     else if (p < .85){ glitch(ctx, r, 1); chaos(ctx, r, (p - .55)/.3); }
+    else if (swap) swapIn(ctx, r, (p - .85)/.15);
     else shutdown(ctx, r, (p - .85)/.15);
-  } else blackout(ctx, r, ts - D);
+  } else if (swap) revealed(ctx, r, ts - D);
+  else blackout(ctx, r, ts - D);
   ctx.restore();
 }
 
@@ -625,6 +742,39 @@ window.addEventListener('paste', e => {
   const item = [...(e.clipboardData?.items || [])].find(i => i.type.startsWith('image/'));
   if (item) loadFile(item.getAsFile());
 });
+function setSource2(s, label){
+  if (playing) stop();
+  src2 = s; $('src2Label').textContent = '第二張：' + label;
+  if (P) P.s2dirty = true;
+  cur = Math.round((opt.pre + opt.dur + Math.min(opt.hold, 1))*opt.fps); if (cur > N-1) cur = N-1;
+  draw();
+}
+function loadFile2(file){
+  if (!file || !file.type.startsWith('image/')) return;
+  const url = URL.createObjectURL(file), im = new Image();
+  im.onload = () => setSource2(im, file.name || '圖片');
+  im.onerror = () => { $('src2Label').textContent = '第二張無法讀取，請換一張 PNG 或 JPG'; };
+  im.src = url;
+}
+$('upload2').onclick = () => $('file2').click();
+$('file2').onchange = e => { loadFile2(e.target.files[0]); e.target.value = ''; };
+$('useSample2').onclick = () => setSource2(drawSample2(), '範例');
+$('align').onchange = e => { opt.align = e.target.value; P.s2dirty = true; draw(); };
+$('after').onchange = e => { opt.after = e.target.value; draw(); };
+$('showText').onchange = e => { opt.showText = e.target.checked; draw(); };
+$('textDur').oninput = e => { opt.textDur = +e.target.value; showVals(); draw(); };
+const MODE_HINT = { black:'雜訊與亂碼過後，區塊黑屏並顯示文字。', swap:'雜訊與亂碼過後，區塊換成第二張圖，可選擇是否顯示文字。' };
+function setMode(m){
+  opt.mode = m;
+  $('app').className = 'app mode-' + m;
+  document.querySelectorAll('.seg button').forEach(b => b.setAttribute('aria-pressed', b.dataset.mode === m));
+  $('modeHint').textContent = MODE_HINT[m];
+  $('holdLabel').textContent = m === 'swap' ? '換圖後停留' : '黑屏停留';
+  if (playing) stop();
+  cur = Math.min(N-1, Math.round((opt.pre + opt.dur + (m === 'swap' ? .9 : .6))*opt.fps));
+  draw();
+}
+document.querySelectorAll('.seg button').forEach(b => b.onclick = () => setMode(b.dataset.mode));
 $('resetRegion').onclick = () => { region = { x:.2, y:.28, w:.6, h:.44 }; refresh(); };
 
 /* options */
@@ -662,6 +812,7 @@ const showVals = () => {
   $('preV').textContent = opt.pre.toFixed(1) + ' 秒';
   $('durV').textContent = opt.dur.toFixed(1) + ' 秒';
   $('holdV').textContent = opt.hold.toFixed(1) + ' 秒';
+  $('textDurV').textContent = opt.textDur ? opt.textDur.toFixed(1) + ' 秒後消失' : '一直顯示';
 };
 $('amp').oninput = e => { opt.amp = +e.target.value; showVals(); draw(); };
 $('pre').oninput = e => { opt.pre = +e.target.value; showVals(); updateMeta(); draw(); };
@@ -815,7 +966,8 @@ $('save').onclick = () => {
 showVals(); setAccent(opt.accent);
 src = drawSample(); prepare(); cur = Math.round((opt.pre + opt.dur*.65)*opt.fps); refresh();
 loadFonts(opt.main + opt.sub).then(() => {
-  if ($('srcLabel').textContent === '範例圖片'){ src = drawSample(); prepare(); refresh(); } else draw();
+  if ($('src2Label').textContent === '第二張：範例'){ src2 = drawSample2(); }
+  if ($('srcLabel').textContent === '範例圖片'){ src = drawSample(); prepare(); refresh(); } else { P.s2dirty = true; draw(); }
 });
 })();
 </script>
