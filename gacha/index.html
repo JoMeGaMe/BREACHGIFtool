@@ -143,6 +143,13 @@ input[type=range]{accent-color:var(--accent);width:100%}
 .opaque{display:flex;flex-direction:column;gap:8px}
 .warn{color:var(--accent)}
 .colors{grid-template-columns:1fr 1fr}
+.bg-box{display:flex;flex-direction:column;gap:10px}
+.bg-pick{display:grid;grid-template-columns:120px minmax(0,1fr);gap:10px;align-items:center}
+.bg-thumb{aspect-ratio:16/9;max-width:100%;border:1px solid var(--line);border-radius:4px;display:grid;place-items:center;overflow:hidden;
+  background:repeating-conic-gradient(#232a35 0 25%,#1a2029 0 50%) 0 0/14px 14px}
+.bg-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.bg-btns{display:flex;flex-direction:column;align-items:flex-start;gap:6px;min-width:0}
+.bg-btns .hint{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
 textarea{width:100%;background:var(--raise);border:1px solid var(--line);border-radius:4px;color:var(--fg);padding:8px 10px;font:inherit;font-size:13.5px;resize:vertical;min-height:58px}
 .seg5{grid-template-columns:repeat(5,1fr)}
 .seg5 label span{border-left:1px solid var(--line);border-top:0!important}
@@ -279,6 +286,35 @@ textarea{width:100%;background:var(--raise);border:1px solid var(--line);border-
       </div>
       </div>
 
+      <div class="pane" data-label="背景">
+      <div class="group">
+        <h2>背景</h2>
+        <div class="seg" role="radiogroup" aria-label="背景類型">
+          <label><input type="radio" name="bgMode" value="color" checked><span>純色（底色）</span></label>
+          <label><input type="radio" name="bgMode" value="image"><span>圖片</span></label>
+        </div>
+        <div data-bg="image" hidden class="bg-box">
+          <div class="bg-pick">
+            <div class="bg-thumb" id="bgThumbBox"><img id="bgThumb" alt="背景圖預覽" hidden><span class="hint" id="bgEmpty">尚未選擇</span></div>
+            <div class="bg-btns">
+              <button class="btn" type="button" id="bgPick">選擇背景圖</button>
+              <button class="btn" type="button" id="bgClear" hidden>移除</button>
+              <span class="hint" id="bgName"></span>
+            </div>
+          </div>
+          <input type="file" id="bgFile" accept="image/*" hidden>
+          <label class="field"><span>擺放</span>
+            <select id="bgFit"><option value="cover">填滿裁切</option><option value="contain">完整顯示（空白處補底色）</option></select></label>
+          <label class="field"><span>模糊<em class="val" id="bgBlurVal">0</em></span>
+            <input type="range" id="bgBlur" min="0" max="20" step="1" value="0"></label>
+          <label class="field"><span>蓋一層底色<em class="val" id="bgDimVal">0%</em></span>
+            <input type="range" id="bgDim" min="0" max="90" step="5" value="0"></label>
+          <label class="check"><input type="checkbox" id="bgZoom">緩慢推近</label>
+          <p class="hint">支援 GIF 背景。模糊和蓋底色可以讓角色、名字更突出；緩慢推近或 GIF 背景會讓每一格都不同，檔案會變大。</p>
+        </div>
+      </div>
+      </div>
+
       <div class="pane" data-label="顏色">
       <div class="group">
         <h2>顏色</h2>
@@ -359,7 +395,7 @@ function fontOf(fam){return FONTS.find(f=>f.fam===fam)||FONTS[0]}
 
 
 /* ---------- state ---------- */
-const S={frames:[],delays:[],total:0,name:"艾琳",sub:"夜行偵探",stars:5,line:"今晚的月色，很適合查案。",lineDir:"h",lineFx:"fade",lineFont:"LXGW WenKai TC",lineScale:1,lineX:0,lineY:0,lineColor:"#141414",lineBrackets:true,lineStroke:true,rankMode:"stars",rarity:"SSR",rankFont:"Bungee",rainbow:false,wedgeAng:0,bandAng:0,font:"Noto Sans TC",nameScale:1,
+const S={frames:[],delays:[],total:0,name:"艾琳",sub:"夜行偵探",stars:5,line:"今晚的月色，很適合查案。",lineDir:"h",lineFx:"fade",lineFont:"LXGW WenKai TC",lineScale:1,lineX:0,lineY:0,lineColor:"#141414",lineBrackets:true,lineStroke:true,bgMode:"color",bgFit:"cover",bgBlur:0,bgDim:0,bgZoom:false,rankMode:"stars",rarity:"SSR",rankFont:"Bungee",rainbow:false,wedgeAng:0,bandAng:0,font:"Noto Sans TC",nameScale:1,
   side:"right",charScale:1,charX:0,charY:0,dropShadow:true,
   bg:"#ffffff",shadow:"#141414",bandA:"#7d7d7d",bandB:"#8a8a8a",text:"#ffffff",star:"#ffc93d",
   size:480,ratio:.5625,speed:1,hold:1.5,loop:true,removeBg:false,tol:40};
@@ -508,6 +544,43 @@ function lzwDecode(min,data,n){
   return out;
 }
 
+/* ---------- background image ---------- */
+let bgSrc=null;            // {id, name, frames:[{cv,delay}], delays, total}
+let bgCache={key:"",list:[]};
+function bgFrameIdx(t){
+  if(!bgSrc||bgSrc.frames.length<2)return 0;
+  let x=((t%bgSrc.total)+bgSrc.total)%bgSrc.total;
+  for(let i=0;i<bgSrc.delays.length;i++){if(x<bgSrc.delays[i])return i;x-=bgSrc.delays[i]}
+  return bgSrc.delays.length-1;
+}
+function bgRender(i,W,H){
+  const z=S.bgZoom?1.1:1,key=[W,H,S.bgFit,S.bgBlur,z,bgSrc.id,S.bgFit==="contain"?S.bg:""].join("|");
+  if(bgCache.key!==key)bgCache={key,list:[]};
+  if(bgCache.list[i])return bgCache.list[i];
+  const RW=Math.round(W*z),RH=Math.round(H*z),c=document.createElement("canvas");c.width=RW;c.height=RH;
+  const x=c.getContext("2d"),f=bgSrc.frames[i].cv,iw=f.naturalWidth||f.width,ih=f.naturalHeight||f.height;
+  const k=S.bgFit==="cover"?Math.max(RW/iw,RH/ih):Math.min(RW/iw,RH/ih),dw=iw*k,dh=ih*k;
+  x.fillStyle=S.bg;x.fillRect(0,0,RW,RH);x.imageSmoothingQuality="high";
+  if(S.bgBlur>0){
+    // blur by shrinking and enlarging again, twice for a softer result
+    const sc=1/(1+S.bgBlur*.55),sw=Math.max(4,Math.round(RW*sc)),sh=Math.max(4,Math.round(RH*sc));
+    const a=document.createElement("canvas");a.width=sw;a.height=sh;const ax=a.getContext("2d");ax.imageSmoothingQuality="high";
+    ax.fillStyle=S.bg;ax.fillRect(0,0,sw,sh);ax.drawImage(f,(sw-dw*sc)/2,(sh-dh*sc)/2,dw*sc,dh*sc);
+    const b=document.createElement("canvas");b.width=Math.max(2,sw>>1);b.height=Math.max(2,sh>>1);const bx=b.getContext("2d");bx.imageSmoothingQuality="high";
+    bx.drawImage(a,0,0,b.width,b.height);ax.clearRect(0,0,sw,sh);ax.drawImage(b,0,0,sw,sh);
+    x.drawImage(a,0,0,RW,RH);
+  }else x.drawImage(f,(RW-dw)/2,(RH-dh)/2,dw,dh);
+  bgCache.list[i]=c;return c;
+}
+function drawBg(ctx,W,H,t,T){
+  ctx.fillStyle=S.bg;ctx.fillRect(0,0,W,H);
+  if(S.bgMode!=="image"||!bgSrc)return;
+  const c=bgRender(bgFrameIdx(t),W,H);
+  const z=S.bgZoom?1+.08*clamp(t/Math.max(1,T.end-S.hold*1000)):1;
+  ctx.drawImage(c,(W-W*z)/2,(H-H*z)/2,W*z,H*z);
+  if(S.bgDim>0){ctx.globalAlpha=S.bgDim;ctx.fillStyle=S.bg;ctx.fillRect(0,0,W,H);ctx.globalAlpha=1}
+}
+
 /* ---------- dialogue line ---------- */
 const ROT=new Set(Array.from("「」『』（）()《》〈〉【】[]…—ー～~-─:;‥｜|"));
 const PUNC=new Set(Array.from("，。、．,."));
@@ -579,7 +652,7 @@ function frameCount(){return Math.max(1,Math.ceil(TL().end/STEP))}
 function star(ctx,cx,cy,r){ctx.beginPath();for(let i=0;i<10;i++){const a=-Math.PI/2+i*Math.PI/5,rr=i%2?r*.45:r;ctx.lineTo(cx+Math.cos(a)*rr,cy+Math.sin(a)*rr)}ctx.closePath();ctx.fill()}
 function draw(ctx,W,H,t){
   const T=TL(),R=S.side==="right",X=x=>R?x:W-x,m=Math.min(W,H);
-  ctx.save();ctx.fillStyle=S.bg;ctx.fillRect(0,0,W,H);
+  ctx.save();drawBg(ctx,W,H,t,T);
   const has=S.frames.length>0,phaseT=t>=T.flash[0]?t-T.char[0]:t-T.sil[0];
   const fidx=frameAt(Math.max(0,phaseT)),ch=has?S.frames[fidx]:null,sil=has?silOf(fidx):null;
   let cw=0,chH=0;
@@ -887,6 +960,35 @@ $("save").addEventListener("click",async()=>{
     else if(c==="rate_limited")setStatus("下載視窗已經開著，請先處理它。");
     else{setStatus("這個檢視無法直接下載，請在圖片上按右鍵（手機長按）另存。",true);$("save").hidden=true;$("saveHint").hidden=false}}
 });
+
+/* ---------- background controls ---------- */
+function syncBg(){document.querySelectorAll("[data-bg]").forEach(e=>e.hidden=e.dataset.bg!==S.bgMode)}
+document.querySelectorAll("input[name=bgMode]").forEach(r=>r.addEventListener("change",()=>{S.bgMode=r.value;syncBg();refresh()}));
+$("bgPick").onclick=()=>$("bgFile").click();
+async function loadBg(file){
+  if(!file)return;
+  try{
+    let frames;
+    if(file.type==="image/gif"||/\.gif$/i.test(file.name)){frames=decodeGif(await file.arrayBuffer(),120)}
+    else{frames=await new Promise((res,rej)=>{const u=URL.createObjectURL(file),im=new Image();im.onload=()=>res([{cv:im,delay:100}]);im.onerror=()=>{URL.revokeObjectURL(u);rej(new Error("無法讀取"))};im.src=u})}
+    // shrink very large backgrounds once, so every frame stays quick to draw
+    frames=frames.map(f=>{const iw=f.cv.naturalWidth||f.cv.width,ih=f.cv.naturalHeight||f.cv.height,k=Math.min(1,1400/Math.max(iw,ih));
+      if(k>=1)return f;const c=document.createElement("canvas");c.width=Math.round(iw*k);c.height=Math.round(ih*k);c.getContext("2d").drawImage(f.cv,0,0,c.width,c.height);return{cv:c,delay:f.delay}});
+    const delays=frames.map(f=>f.delay||100);
+    bgSrc={id:Date.now(),name:file.name,frames,delays,total:delays.reduce((a,b)=>a+b,0)};
+    const t=document.createElement("canvas"),f0=frames[0].cv;t.width=240;t.height=135;const tx=t.getContext("2d"),iw=f0.naturalWidth||f0.width,ih=f0.naturalHeight||f0.height,k=Math.max(240/iw,135/ih);
+    tx.drawImage(f0,(240-iw*k)/2,(135-ih*k)/2,iw*k,ih*k);
+    $("bgThumb").src=t.toDataURL("image/jpeg",.8);$("bgThumb").hidden=false;$("bgEmpty").hidden=true;
+    $("bgName").textContent=frames.length>1?file.name+"（"+frames.length+" 格）":file.name;$("bgClear").hidden=false;
+    setStatus("");refresh();
+  }catch(e){setStatus("背景圖無法讀取："+(e.message||e)+"。請改用 PNG、JPG、WebP 或 GIF。",true)}
+}
+$("bgFile").addEventListener("change",e=>{loadBg(e.target.files[0]);e.target.value=""});
+$("bgClear").onclick=()=>{bgSrc=null;bgCache={key:"",list:[]};$("bgThumb").hidden=true;$("bgEmpty").hidden=false;$("bgName").textContent="";$("bgClear").hidden=true;refresh()};
+$("bgFit").addEventListener("change",e=>{S.bgFit=e.target.value;refresh()});
+rng("bgBlur",v=>String(v));rng("bgDim",v=>v+"%",.01);
+$("bgZoom").addEventListener("change",e=>{S.bgZoom=e.target.checked;refresh()});
+syncBg();
 
 /* ---------- boot ---------- */
 if(window.UserFonts){
