@@ -1,0 +1,609 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="上傳多張圖片、排序，產生帶「讀取中...」、LOADING 或進度條的循環 GIF。全部在瀏覽器內完成。">
+<title>Loading GIF 讀取中動畫產生器</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap">
+<style>
+@font-face{font-family:"Chakra Petch";font-weight:600;font-style:normal;font-display:swap;src:url(../fonts/chakra-petch-600.woff) format("woff")}
+@font-face{font-family:"IBM Plex Mono";font-weight:400;font-style:normal;font-display:swap;src:url(../fonts/ibm-plex-mono-400.woff) format("woff")}
+@font-face{font-family:"IBM Plex Mono";font-weight:600;font-style:normal;font-display:swap;src:url(../fonts/ibm-plex-mono-600.woff) format("woff")}
+/* Layout: same two-pane workbench as Breach — monitor + image strip on the left, control rack on the right; stacks on phones */
+:root{
+  --bg:#0f1217;
+  --panel:#161a21;
+  --raise:#1e232c;
+  --line:#2c333f;
+  --fg:#e3e8f0;
+  --muted:#8b96a8;
+  --accent:#ffb43d;
+  --accent-ink:#1b1306;
+  --danger:#ff6474;
+  --f-display:"Chakra Petch","Noto Sans TC",system-ui,sans-serif;
+  --f-body:"Noto Sans TC",system-ui,-apple-system,"PingFang TC","Microsoft JhengHei",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0}
+html,body{background:var(--bg);color:var(--fg)}
+body{font-family:var(--f-body);font-size:14px;line-height:1.55;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 40px}
+img{max-width:100%}
+.app{max-width:1240px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
+.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:8px 24px;border-bottom:1px solid var(--line);padding-bottom:14px}
+.brand{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.mark{font-family:var(--f-display);font-weight:600;font-size:26px;letter-spacing:.06em;color:var(--accent)}
+.mark b{color:var(--fg);font-weight:600}
+h1{margin:0;font-size:17px;font-weight:500;color:var(--fg)}
+.lede{margin:0;color:var(--muted);max-width:60ch;text-wrap:pretty}
+.privacy{display:inline-block;margin-top:4px;font-size:12.5px;color:var(--fg);opacity:.8}
+.privacy::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent);margin-right:7px;vertical-align:middle}
+.home{color:var(--accent);font-size:13px}
+.layout{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:24px;align-items:start}
+@media (max-width:880px){.layout{grid-template-columns:minmax(0,1fr)}}
+.stage{display:flex;flex-direction:column;gap:10px;min-width:0}
+.stage-bar{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.chips{display:flex;gap:6px;flex-wrap:wrap;min-width:0}
+.chip{font-family:var(--f-mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:3px 8px;border:1px solid var(--line);border-radius:3px;color:var(--muted);white-space:nowrap}
+.mono{font-family:var(--f-mono);font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.monitor{position:relative;background:
+   repeating-linear-gradient(0deg,transparent 0 3px,rgba(255,255,255,.015) 3px 4px),#0a0c10;
+  border:1px solid var(--line);border-radius:6px;padding:16px;display:grid;place-items:center;min-height:240px}
+#preview{display:block;max-width:100%;height:auto}
+.hint{margin:0;color:var(--muted);font-size:12.5px}
+
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible,input:focus-visible,select:focus-visible,label:focus-within>span{outline:2px solid var(--accent);outline-offset:2px}
+.btn{display:inline-flex;align-items:center;gap:8px;background:var(--raise);border:1px solid var(--line);border-radius:4px;padding:7px 12px;font-size:13px}
+.btn:hover{border-color:var(--muted)}
+.btn-primary{width:100%;justify-content:center;background:var(--accent);color:var(--accent-ink);border:0;border-radius:4px;padding:12px;font-weight:700;font-size:15px;letter-spacing:.04em}
+.btn-primary:hover{filter:brightness(1.08)}
+button:disabled{opacity:.45;cursor:not-allowed}
+
+/* image strip */
+.strip{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:14px 16px;display:flex;flex-direction:column;gap:10px}
+.strip-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.strip-head h2,.group h2{margin:0;font:600 11px/1 var(--f-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.drop{border:1px dashed var(--line);border-radius:4px;padding:12px;text-align:center;color:var(--muted);cursor:pointer;background:var(--raise);font-size:13px}
+.drop:hover,.drop.over{border-color:var(--accent);color:var(--fg)}
+.drop strong{color:var(--accent);font-weight:500}
+.thumbs{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:8px;list-style:none;margin:0;padding:0}
+.thumb{position:relative;border:1px solid var(--line);border-radius:4px;overflow:hidden;background:var(--raise);display:flex;flex-direction:column}
+.thumb.dragging{opacity:.4}
+.thumb.target{outline:2px solid var(--accent);outline-offset:1px}
+.thumb .pic{aspect-ratio:1;width:100%;max-width:100%;object-fit:cover;display:block;background:#0a0c10;cursor:grab}
+.thumb .num{position:absolute;top:4px;left:4px;font:600 11px/1 var(--f-mono);background:var(--accent);color:var(--accent-ink);padding:3px 5px;border-radius:2px}
+.thumb .tag{position:absolute;top:4px;right:4px;font:600 10px/1 var(--f-mono);letter-spacing:.06em;background:#0a0c10cc;color:var(--muted);padding:3px 5px;border-radius:2px;border:1px solid var(--line)}
+.thumb .acts{display:flex;border-top:1px solid var(--line)}
+.thumb .acts button{flex:1;border:0;background:none;color:var(--fg);padding:5px 0;font-size:12px}
+.thumb .acts button+button{border-left:1px solid var(--line)}
+.thumb .acts button:hover{background:var(--line)}
+.thumb .acts button:disabled{opacity:.25;background:none}
+.thumb .acts .del{color:var(--danger)}
+
+/* control rack */
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:6px;display:flex;flex-direction:column}
+.group{padding:14px 16px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:10px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.field{display:flex;flex-direction:column;gap:5px;min-width:0}
+.field>span{font-size:12.5px;color:var(--fg)}
+.val{font-style:normal;color:var(--muted);font-family:var(--f-mono);font-size:11.5px;margin-left:6px;font-variant-numeric:tabular-nums}
+input[type=text],select{width:100%;background:var(--raise);border:1px solid var(--line);border-radius:4px;color:var(--fg);padding:8px 10px;font:inherit;font-size:13.5px}
+input[type=range]{accent-color:var(--accent);width:100%}
+.check{display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer}
+.check input{accent-color:var(--accent);width:16px;height:16px}
+/* segmented control (radio based) */
+.seg{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--line);border-radius:4px;overflow:hidden}
+.seg label{position:relative;cursor:pointer;display:block}
+.seg input{position:absolute;opacity:0;pointer-events:none}
+.seg span{display:flex;align-items:center;justify-content:center;gap:6px;height:100%;background:var(--raise);padding:9px 6px;font-size:13.5px;color:var(--fg);text-align:center}
+.seg label:nth-child(even) span{border-left:1px solid var(--line)}
+.seg label:nth-child(n+3) span{border-top:1px solid var(--line)}
+.seg input:checked+span{background:var(--accent);color:var(--accent-ink);font-weight:700}
+.seg label:focus-within>span{outline-offset:-2px}
+.bar-ico{display:inline-block;width:26px;height:9px;flex:none}
+.bi-outline{border:2px solid currentColor;padding:1px;background:linear-gradient(90deg,currentColor 0 60%,transparent 60%) content-box}
+.bi-solid{background:linear-gradient(90deg,currentColor 0 60%,transparent 60%)}
+.colors{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.color{display:flex;align-items:center;gap:8px;cursor:pointer}
+.color input[type=color]{width:34px;height:28px;border:1px solid var(--line);border-radius:4px;background:var(--raise);padding:2px;cursor:pointer;flex:none}
+.color .t{display:flex;flex-direction:column;line-height:1.3;font-size:12.5px}
+.color .val{margin-left:0}
+.swatches{display:flex;gap:6px;flex-wrap:wrap}
+.swatches button{display:flex;align-items:center;gap:6px;background:var(--raise);border:1px solid var(--line);border-radius:4px;padding:4px 8px 4px 4px;font-size:12px}
+.swatches button:hover{border-color:var(--muted)}
+.swatches i{display:inline-flex;width:22px;height:16px;border-radius:2px;overflow:hidden;border:1px solid var(--line)}
+.swatches i b{flex:1}
+.actions{padding:16px;display:flex;flex-direction:column;gap:10px}
+.bar{height:6px;background:var(--raise);border-radius:3px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .1s}
+.status{margin:0;font-size:12.5px;color:var(--muted);min-height:1.2em}
+.status.err{color:var(--danger)}
+
+.result{display:flex;flex-direction:column;gap:10px;border:1px solid var(--line);border-radius:6px;padding:14px;background:var(--panel)}
+.result-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.result-head strong{font-family:var(--f-display);font-weight:600;letter-spacing:.06em;font-size:15px}
+.result img{display:block;max-width:100%;height:auto;max-height:60vh;margin:0 auto;border-radius:3px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <header class="top">
+    <div class="brand"><span class="mark">LOADING<b>.GIF</b></span><h1>讀取中動畫產生器</h1></div>
+    <p class="lede">上傳多張圖片並排序，加上「讀取中...」、LOADING 或進度條，產生無限循環的 GIF 動畫。<br><span class="privacy">所有處理都在你的瀏覽器內完成，圖片不會上傳到任何伺服器。網頁只會向 Google Fonts 下載字型檔。</span><br><a class="home" href="../index.html">← 回到全部工具</a></p>
+  </header>
+
+  <main class="layout">
+    <section class="stage">
+      <div class="stage-bar">
+        <div class="chips"><span class="chip" id="imgCount">3 張</span><span class="chip">無限循環</span></div>
+        <span class="mono" id="dims">320×320</span>
+      </div>
+      <div class="monitor"><canvas id="preview" width="320" height="320" aria-label="即時預覽"></canvas></div>
+      <div class="mono" id="planMeta"></div>
+
+      <div class="strip">
+        <div class="strip-head"><h2>圖片與順序</h2><span class="hint">拖曳縮圖或按 ◀ ▶ 調整順序</span></div>
+        <label class="drop" id="drop" for="file"><strong>選擇圖片</strong>，或拖曳、貼上圖片到這裡。可一次多張，GIF 只取第一格。</label>
+        <input type="file" id="file" accept="image/*" multiple hidden>
+        <ul class="thumbs" id="thumbs"></ul>
+      </div>
+
+      <div class="result" id="result" hidden>
+        <div class="result-head"><strong>輸出結果</strong><span class="mono" id="outMeta"></span></div>
+        <img id="out" alt="生成的 GIF 動畫">
+        <div class="row">
+          <button class="btn" id="save" type="button" hidden>儲存 GIF</button>
+          <span class="hint" id="saveHint">也可以在圖片上按右鍵（手機長按）另存。</span>
+        </div>
+      </div>
+    </section>
+
+    <aside class="panel" aria-label="設定">
+      <div class="group">
+        <h2>讀取標示</h2>
+        <div class="seg" role="radiogroup" aria-label="標示類型">
+          <label><input type="radio" name="mode" value="zh" checked><span>讀取中...</span></label>
+          <label><input type="radio" name="mode" value="en"><span>LOADING...</span></label>
+          <label><input type="radio" name="mode" value="custom"><span>自訂文字</span></label>
+          <label><input type="radio" name="mode" value="bar"><span>進度條</span></label>
+        </div>
+        <label class="field" data-for="custom" hidden><span>自訂文字<em class="val">末尾自動加上跳動的 ...</em></span>
+          <input type="text" id="customText" value="請稍候" maxlength="16"></label>
+        <label class="field" data-for="text"><span>字體</span><select id="font"></select></label>
+        <label class="field" data-for="text"><span>文字大小<em class="val" id="sizeVal">100%</em></span>
+          <input type="range" id="textScale" min="50" max="170" step="5" value="100"></label>
+      </div>
+
+      <div class="group" data-for="bar" hidden>
+        <h2>進度條</h2>
+        <div class="seg" role="radiogroup" aria-label="進度條樣式">
+          <label><input type="radio" name="barStyle" value="outline" checked><span><i class="bar-ico bi-outline"></i>外框＋填滿</span></label>
+          <label><input type="radio" name="barStyle" value="solid"><span><i class="bar-ico bi-solid"></i>單純色塊</span></label>
+        </div>
+        <label class="field"><span>循環幾輪到 100%<em class="val" id="loopsVal">3 輪</em></span>
+          <input type="range" id="loops" min="1" max="10" step="1" value="3"></label>
+        <label class="field"><span>滿格後停留<em class="val" id="holdVal">0.6 秒</em></span>
+          <input type="range" id="hold" min="0" max="3" step="0.1" value="0.6"></label>
+        <label class="field"><span>粗細<em class="val" id="thickVal">100%</em></span>
+          <input type="range" id="thick" min="50" max="200" step="10" value="100"></label>
+        <div class="row" style="gap:16px">
+          <label class="check"><input type="checkbox" id="round">圓角</label>
+          <label class="check"><input type="checkbox" id="percent">顯示百分比</label>
+        </div>
+        <label class="field" id="pctFontRow" hidden><span>百分比字體</span><select id="font2"></select></label>
+      </div>
+
+      <div class="group">
+        <h2>顏色</h2>
+        <div class="colors">
+          <label class="color"><input type="color" id="bg" value="#ffffff"><span class="t">底色<span class="val" id="bgHex">#FFFFFF</span></span></label>
+          <label class="color"><input type="color" id="fg" value="#1f2a3a"><span class="t"><span id="fgLbl">文字顏色</span><span class="val" id="fgHex">#1F2A3A</span></span></label>
+        </div>
+        <div class="swatches" id="swatches" aria-label="快速配色"></div>
+      </div>
+
+      <div class="group">
+        <h2>尺寸與速度</h2>
+        <div class="two">
+          <label class="field"><span>寬度</span>
+            <select id="size"><option value="240">240 px</option><option value="320" selected>320 px</option><option value="400">400 px</option><option value="480">480 px</option><option value="640">640 px</option></select></label>
+          <label class="field"><span>比例</span>
+            <select id="ratio"><option value="1">1 : 1</option><option value="0.75">4 : 3</option><option value="1.3333">3 : 4</option><option value="0.5625">16 : 9</option></select></label>
+        </div>
+        <label class="field"><span>圖片擺放</span>
+          <select id="fit"><option value="contain">完整顯示</option><option value="cover">填滿裁切</option></select></label>
+        <label class="field"><span>每張圖片停留<em class="val" id="durVal">0.5 秒</em></span>
+          <input type="range" id="dur" min="0.1" max="2" step="0.1" value="0.5"></label>
+      </div>
+
+      <div class="actions">
+        <button class="btn-primary" id="make" type="button">生成 GIF</button>
+        <div class="bar" id="prog" hidden><i></i></div>
+        <p class="status" id="status"></p>
+      </div>
+    </aside>
+  </main>
+</div>
+
+<script>
+(()=>{
+"use strict";
+const $=id=>document.getElementById(id);
+
+/* ---------- fonts (all free, from Google Fonts) ---------- */
+const FONTS=[
+  {fam:"Noto Sans TC",lab:"思源黑體 Noto Sans TC",w:700,cjk:true},
+  {fam:"Noto Serif TC",lab:"思源宋體 Noto Serif TC",w:700,cjk:true},
+  {fam:"LXGW WenKai TC",lab:"霞鶩文楷 LXGW WenKai",w:700,cjk:true},
+  {fam:"Chiron GoRound TC",lab:"昭源圓體 Chiron GoRound",w:700,cjk:true},
+  {fam:"Huninn",lab:"粉圓體 Huninn",w:400,cjk:true},
+  {fam:"Iansui",lab:"芫荽 Iansui（手寫感）",w:400,cjk:true},
+  {fam:"Press Start 2P",lab:"Press Start 2P（像素，僅英數）",w:400,cjk:false},
+  {fam:"Silkscreen",lab:"Silkscreen（像素，僅英數）",w:400,cjk:false},
+  {fam:"VT323",lab:"VT323（終端機，僅英數）",w:400,cjk:false},
+  {fam:"Bungee",lab:"Bungee（粗體招牌，僅英數）",w:400,cjk:false},
+  {fam:"Fredoka",lab:"Fredoka（圓潤，僅英數）",w:600,cjk:false},
+];
+const loadedLinks=new Map();
+function fontLoad(f,text){
+  const key=f.fam+"|"+text;
+  if(loadedLinks.has(key)) return loadedLinks.get(key);
+  const url="https://fonts.googleapis.com/css2?family="+encodeURIComponent(f.fam).replace(/%20/g,"+")+":wght@"+f.w+"&text="+encodeURIComponent(text)+"&display=block";
+  const p=new Promise(res=>{
+    const l=document.createElement("link");l.rel="stylesheet";l.href=url;
+    const done=()=>{Promise.race([document.fonts.load(f.w+' 40px "'+f.fam+'"',text),new Promise(r=>setTimeout(r,5000))]).catch(()=>{}).then(res)};
+    l.onload=done;l.onerror=()=>res();document.head.appendChild(l);
+  });
+  loadedLinks.set(key,p);return p;
+}
+
+/* ---------- state ---------- */
+const S={images:[],mode:"zh",custom:"請稍候",font:"Noto Sans TC",font2:"Press Start 2P",scale:1,
+  bg:"#ffffff",fg:"#1f2a3a",barStyle:"outline",loops:3,hold:.6,thick:1,round:false,percent:false,
+  size:320,ratio:1,fit:"contain",dur:.5};
+let uid=0;
+
+/* sample images, drawn locally */
+function sample(i){
+  const c=document.createElement("canvas");c.width=c.height=240;const x=c.getContext("2d");
+  const pal=[["#ffd34d","#ff8a3d"],["#7fd1c7","#2e8f9a"],["#c9a7ff","#6b4fd6"]][i];
+  x.fillStyle=pal[0];x.fillRect(0,0,240,240);
+  x.fillStyle=pal[1];
+  // a little hopping blob: three poses
+  const y=[140,100,130][i], sx=[1.12,.92,1.04][i], sy=[.86,1.1,.95][i];
+  x.save();x.translate(120,y);x.scale(sx,sy);x.beginPath();x.arc(0,0,58,0,Math.PI*2);x.fill();
+  x.fillStyle="#fff";x.beginPath();x.arc(-20,-10,12,0,7);x.arc(20,-10,12,0,7);x.fill();
+  x.fillStyle="#1f2a3a";x.beginPath();x.arc(-18,-8,6,0,7);x.arc(22,-8,6,0,7);x.fill();x.restore();
+  x.fillStyle="rgba(0,0,0,.15)";x.beginPath();x.ellipse(120,212,52*(i===1?.7:1),8,0,0,7);x.fill();
+  return {id:++uid,name:"範例 "+(i+1),img:c,thumb:c.toDataURL(),sample:true};
+}
+S.images=[sample(0),sample(1),sample(2)];
+
+/* ---------- frame plan ---------- */
+const STEP=100;
+function geom(){const W=S.size,H=Math.round(S.size*S.ratio);return{W,H}}
+function plan(){
+  const n=Math.max(1,S.images.length),ticks=Math.max(1,Math.round(S.dur*1000/STEP)),fr=[];
+  if(S.mode==="bar"){
+    const prog=n*ticks*S.loops,hold=Math.round(S.hold*1000/STEP);
+    for(let i=0;i<prog+hold;i++)fr.push({img:Math.floor(i/ticks)%n,p:i<prog?(prog>1?i/(prog-1):1):1});
+  }else{
+    let total=n*ticks;const reps=Math.max(1,Math.ceil(12/total));total*=reps;
+    const cycles=Math.max(1,Math.round(total/12));
+    for(let i=0;i<total;i++)fr.push({img:Math.floor(i/ticks)%n,dots:Math.floor(i*cycles*3/total)%3+1});
+  }
+  return fr;
+}
+function label(){return S.mode==="zh"?"讀取中":S.mode==="en"?"LOADING":(S.custom.trim()||"請稍候")}
+function fontOf(fam){return FONTS.find(f=>f.fam===fam)||FONTS[0]}
+
+/* ---------- drawing ---------- */
+function rr(ctx,x,y,w,h,r){if(r>0&&ctx.roundRect){ctx.beginPath();ctx.roundRect(x,y,w,h,Math.min(r,h/2,w/2));}else{ctx.beginPath();ctx.rect(x,y,w,h);}}
+function draw(ctx,W,H,f){
+  ctx.fillStyle=S.bg;ctx.fillRect(0,0,W,H);
+  const m=Math.min(W,H),pad=Math.round(m*.07),indH=Math.round(H*.22);
+  const bx=pad,by=pad,bw=W-pad*2,bh=H-indH-pad;
+  const it=S.images[f.img];
+  if(it&&bh>4){
+    const iw=it.img.naturalWidth||it.img.width,ih=it.img.naturalHeight||it.img.height;
+    const k=S.fit==="cover"?Math.max(bw/iw,bh/ih):Math.min(bw/iw,bh/ih);
+    const dw=iw*k,dh=ih*k;
+    ctx.save();ctx.beginPath();ctx.rect(bx,by,bw,bh);ctx.clip();
+    ctx.imageSmoothingQuality="high";
+    ctx.drawImage(it.img,Math.round(bx+(bw-dw)/2),Math.round(by+(bh-dh)/2),Math.round(dw),Math.round(dh));
+    ctx.restore();
+  }
+  const cy=Math.round(H-indH/2-pad*.1);
+  ctx.fillStyle=S.fg;ctx.strokeStyle=S.fg;ctx.textBaseline="middle";ctx.textAlign="left";
+  if(S.mode!=="bar"){
+    const fo=fontOf(S.font),base=label();
+    let px=Math.round(m*.085*S.scale);
+    ctx.font=fo.w+" "+px+'px "'+fo.fam+'",sans-serif';
+    let wFull=ctx.measureText(base+"...").width;
+    if(wFull>W-pad*2){px=Math.floor(px*(W-pad*2)/wFull);ctx.font=fo.w+" "+px+'px "'+fo.fam+'",sans-serif';wFull=ctx.measureText(base+"...").width;}
+    ctx.fillText(base+".".repeat(f.dots),Math.round(W/2-wFull/2),cy);
+  }else{
+    const th=Math.max(6,Math.round(m*.06*S.thick));
+    let barW=Math.round(W*.7),pctW=0,px=0,fo=fontOf(S.font2);
+    if(S.percent){px=Math.round(Math.max(10,th*.95));ctx.font=fo.w+" "+px+'px "'+fo.fam+'",sans-serif';pctW=Math.ceil(ctx.measureText("100%").width)+Math.round(px*.6);barW=Math.min(barW,W-pad*2-pctW);}
+    const x0=Math.round((W-barW-pctW)/2),y0=Math.round(cy-th/2),r=S.round?th/2:0;
+    if(S.barStyle==="outline"){
+      const lw=Math.max(2,Math.round(th*.16)),gap=Math.max(1,Math.round(th*.12));
+      ctx.lineWidth=lw;rr(ctx,x0+lw/2,y0+lw/2,barW-lw,th-lw,r);ctx.stroke();
+      const ix=x0+lw+gap,iy=y0+lw+gap,iw=barW-2*(lw+gap),ih=th-2*(lw+gap);
+      const fw=Math.round(iw*f.p);
+      if(fw>0&&ih>0){rr(ctx,ix,iy,fw,ih,S.round?ih/2:0);ctx.fill();}
+    }else{
+      const fw=Math.round(barW*f.p);
+      if(fw>0){rr(ctx,x0,y0,fw,th,r);ctx.fill();}
+    }
+    if(S.percent){
+      ctx.textAlign="right";
+      ctx.fillText(Math.round(f.p*100)+"%",x0+barW+pctW,cy+1);ctx.textAlign="left";
+    }
+  }
+}
+
+/* ---------- preview loop ---------- */
+const pv=$("preview"),pctx=pv.getContext("2d");
+let frames=plan(),fi=0,timer=0;
+function tick(){
+  const {W,H}=geom();
+  if(pv.width!==W||pv.height!==H){pv.width=W;pv.height=H;}
+  if(frames.length){fi%=frames.length;draw(pctx,W,H,frames[fi]);fi++;}
+  timer=setTimeout(tick,STEP);
+}
+function needText(){
+  let t="讀取中.LOADING%0123456789"+(S.custom||"");
+  return Array.from(new Set(Array.from(t))).join("");
+}
+let refreshQ=0;
+async function refresh(){
+  const q=++refreshQ;
+  const t=needText();
+  await Promise.all([fontLoad(fontOf(S.font),t),fontLoad(fontOf(S.font2),t)]);
+  if(q!==refreshQ)return;
+  frames=plan();fi=0;
+  const {W,H}=geom();$("dims").textContent=W+"×"+H;
+  const secs=frames.length*STEP/1000;
+  $("planMeta").textContent=S.images.length+" 張圖 · "+frames.length+" 格 · 一輪 "+secs.toFixed(1)+" 秒";
+  clearTimeout(timer);tick();
+}
+
+/* ---------- UI: images ---------- */
+const thumbs=$("thumbs");let dragId=null;
+function renderThumbs(){
+  thumbs.innerHTML="";
+  const n=S.images.length;
+  $("imgCount").textContent=n+" 張";
+  S.images.forEach((it,i)=>{
+    const li=document.createElement("li");li.className="thumb";li.draggable=true;li.dataset.id=it.id;
+    const img=document.createElement("img");img.className="pic";img.src=it.thumb;img.alt=it.name;
+    const num=document.createElement("span");num.className="num";num.textContent=i+1;
+    li.append(img,num);
+    if(it.sample){const t=document.createElement("span");t.className="tag";t.textContent="範例";li.append(t);}
+    const acts=document.createElement("div");acts.className="acts";
+    const mk=(txt,lab,fn,dis,cls)=>{const b=document.createElement("button");b.type="button";b.textContent=txt;b.setAttribute("aria-label",lab);b.disabled=dis;if(cls)b.className=cls;b.onclick=fn;acts.append(b);};
+    mk("◀","往前移",()=>move(i,i-1),i===0);
+    mk("▶","往後移",()=>move(i,i+1),i===n-1);
+    mk("✕","移除 "+it.name,()=>removeImg(i),n<=1,"del");
+    li.append(acts);
+    li.addEventListener("dragstart",e=>{dragId=it.id;li.classList.add("dragging");e.dataTransfer.effectAllowed="move";try{e.dataTransfer.setData("text/plain",String(it.id))}catch(_){}});
+    li.addEventListener("dragend",()=>{dragId=null;li.classList.remove("dragging");thumbs.querySelectorAll(".target").forEach(x=>x.classList.remove("target"))});
+    li.addEventListener("dragover",e=>{if(dragId==null)return;e.preventDefault();li.classList.add("target")});
+    li.addEventListener("dragleave",()=>li.classList.remove("target"));
+    li.addEventListener("drop",e=>{if(dragId==null)return;e.preventDefault();e.stopPropagation();
+      const from=S.images.findIndex(x=>x.id===dragId),to=S.images.findIndex(x=>x.id===it.id);move(from,to);});
+    thumbs.append(li);
+  });
+}
+function move(a,b){if(b<0||b>=S.images.length||a===b)return;const [x]=S.images.splice(a,1);S.images.splice(b,0,x);renderThumbs();refresh();}
+function removeImg(i){const [x]=S.images.splice(i,1);if(x&&x.url)URL.revokeObjectURL(x.url);renderThumbs();refresh();}
+function loadImage(file){
+  return new Promise(res=>{
+    const url=URL.createObjectURL(file),img=new Image();
+    img.onload=()=>{
+      const c=document.createElement("canvas"),k=Math.min(1,200/Math.max(img.naturalWidth,img.naturalHeight));
+      c.width=Math.max(1,Math.round(img.naturalWidth*k));c.height=Math.max(1,Math.round(img.naturalHeight*k));
+      c.getContext("2d").drawImage(img,0,0,c.width,c.height);
+      res({id:++uid,name:file.name,img,url,thumb:c.toDataURL("image/jpeg",.8),sample:false});
+    };
+    img.onerror=()=>{URL.revokeObjectURL(url);res(null)};
+    img.src=url;
+  });
+}
+async function addFiles(list){
+  const files=Array.from(list).filter(f=>f.type.startsWith("image/")||/\.(png|jpe?g|gif|webp|bmp|avif)$/i.test(f.name));
+  if(!files.length)return;
+  const got=(await Promise.all(files.map(loadImage)));
+  const ok=got.filter(Boolean),bad=got.length-ok.length;
+  if(!ok.length){setStatus("這些檔案無法讀取，請改用 PNG、JPG 或 WebP。",true);return;}
+  if(S.images.every(x=>x.sample))S.images=[];
+  S.images.push(...ok);
+  setStatus(bad?bad+" 個檔案無法讀取（例如 HEIC），已略過。":"",!!bad);
+  renderThumbs();refresh();
+}
+$("file").addEventListener("change",e=>{addFiles(e.target.files);e.target.value=""});
+const drop=$("drop");
+["dragenter","dragover"].forEach(ev=>drop.addEventListener(ev,e=>{if(dragId!=null)return;e.preventDefault();drop.classList.add("over")}));
+["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,()=>drop.classList.remove("over")));
+drop.addEventListener("drop",e=>{if(dragId!=null)return;e.preventDefault();if(e.dataTransfer.files.length)addFiles(e.dataTransfer.files)});
+document.addEventListener("dragover",e=>{if(dragId==null)e.preventDefault()});
+document.addEventListener("drop",e=>{if(dragId==null){e.preventDefault();if(e.dataTransfer&&e.dataTransfer.files.length)addFiles(e.dataTransfer.files)}});
+document.addEventListener("paste",e=>{const fs=Array.from(e.clipboardData?.files||[]);if(fs.length)addFiles(fs)});
+
+/* ---------- UI: controls ---------- */
+function fillFonts(sel,cjkOnly,val){
+  sel.innerHTML="";
+  FONTS.forEach(f=>{const o=document.createElement("option");o.value=f.fam;o.textContent=f.lab;if(cjkOnly&&!f.cjk){o.disabled=true;o.textContent+=" — 不支援中文";}sel.append(o);});
+  sel.value=val;
+}
+function needsCJK(){return S.mode==="zh"||(S.mode==="custom"&&/[^\x00-\x7f]/.test(S.custom))}
+function syncMode(){
+  const bar=S.mode==="bar";
+  document.querySelectorAll('[data-for="text"]').forEach(e=>e.hidden=bar);
+  document.querySelectorAll('[data-for="bar"]').forEach(e=>e.hidden=!bar);
+  document.querySelectorAll('[data-for="custom"]').forEach(e=>e.hidden=S.mode!=="custom");
+  $("pctFontRow").hidden=!(bar&&S.percent);
+  $("fgLbl").textContent=bar?"進度條顏色":"文字顏色";
+  const cjk=needsCJK();
+  if(cjk&&!fontOf(S.font).cjk)S.font="Noto Sans TC";
+  fillFonts($("font"),cjk,S.font);
+}
+document.querySelectorAll('input[name=mode]').forEach(r=>r.addEventListener("change",()=>{S.mode=r.value;syncMode();refresh()}));
+document.querySelectorAll('input[name=barStyle]').forEach(r=>r.addEventListener("change",()=>{S.barStyle=r.value;refresh()}));
+$("customText").addEventListener("input",e=>{S.custom=e.target.value;syncMode();refresh()});
+$("font").addEventListener("change",e=>{S.font=e.target.value;refresh()});
+$("font2").addEventListener("change",e=>{S.font2=e.target.value;refresh()});
+const rng=(id,key,fmt,mul=1)=>{const el=$(id),out=$(id+"Val")||$(id.replace(/Scale$/,"")+"Val");
+  const upd=()=>{S[key]=parseFloat(el.value)*mul;if(out)out.textContent=fmt(parseFloat(el.value));};
+  el.addEventListener("input",()=>{upd();refresh()});upd();};
+rng("textScale","scale",v=>v+"%",.01);$("sizeVal").textContent="100%";
+rng("loops","loops",v=>v+" 輪");
+rng("hold","hold",v=>v.toFixed(1)+" 秒");
+rng("thick","thick",v=>v+"%",.01);
+rng("dur","dur",v=>v.toFixed(1)+" 秒");
+$("textScale").addEventListener("input",e=>$("sizeVal").textContent=e.target.value+"%");
+$("round").addEventListener("change",e=>{S.round=e.target.checked;refresh()});
+$("percent").addEventListener("change",e=>{S.percent=e.target.checked;syncMode();refresh()});
+$("size").addEventListener("change",e=>{S.size=+e.target.value;refresh()});
+$("ratio").addEventListener("change",e=>{S.ratio=+e.target.value;refresh()});
+$("fit").addEventListener("change",e=>{S.fit=e.target.value;refresh()});
+function setColor(key,v){S[key]=v;$(key).value=v;$(key+"Hex").textContent=v.toUpperCase();}
+$("bg").addEventListener("input",e=>{setColor("bg",e.target.value)});
+$("fg").addEventListener("input",e=>{setColor("fg",e.target.value)});
+const PRESETS=[["白底深字","#ffffff","#1f2a3a"],["黑底白字","#111111","#f5f5f5"],["黑底螢光","#0b0f0b","#39ff6a"],["夜空黃","#1c2340","#ffc22e"],["粉嫩","#ffe8ef","#e2557b"],["薄荷","#e6f6f1","#1f7a66"]];
+PRESETS.forEach(([n,b,f])=>{const btn=document.createElement("button");btn.type="button";
+  btn.innerHTML='<i><b style="background:'+b+'"></b><b style="background:'+f+'"></b></i>'+n;
+  btn.onclick=()=>{setColor("bg",b);setColor("fg",f)};$("swatches").append(btn);});
+fillFonts($("font2"),false,S.font2);
+
+/* ---------- GIF encoder (pure JS, runs locally) ---------- */
+class Bytes{constructor(){this.a=new Uint8Array(1<<16);this.n=0}
+  grow(k){if(this.n+k>this.a.length){let s=this.a.length;while(this.n+k>s)s*=2;const b=new Uint8Array(s);b.set(this.a.subarray(0,this.n));this.a=b}}
+  b(v){this.grow(1);this.a[this.n++]=v&255}
+  w(v){this.b(v);this.b(v>>8)}
+  s(str){for(const c of str)this.b(c.charCodeAt(0))}
+  arr(u){this.grow(u.length);this.a.set(u,this.n);this.n+=u.length}
+  out(){return this.a.slice(0,this.n)}}
+const hex=h=>[parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];
+function quantize(px,reserved){
+  const n=px.length>>2,step=Math.max(1,Math.floor(n/16000)),cnt=Math.ceil(n/step);
+  const pts=new Uint8Array(cnt*3);let m=0;
+  for(let i=0;i<n;i+=step){const o=i<<2;pts[m*3]=px[o];pts[m*3+1]=px[o+1];pts[m*3+2]=px[o+2];m++;}
+  const idx=new Uint32Array(m);for(let i=0;i<m;i++)idx[i]=i;
+  const box=(s,e)=>{let mn=[255,255,255],mx=[0,0,0];for(let i=s;i<e;i++){const p=idx[i]*3;for(let c=0;c<3;c++){const v=pts[p+c];if(v<mn[c])mn[c]=v;if(v>mx[c])mx[c]=v}}
+    const r=[mx[0]-mn[0],mx[1]-mn[1],mx[2]-mn[2]];const ch=r[0]>=r[1]&&r[0]>=r[2]?0:r[1]>=r[2]?1:2;return{s,e,ch,range:r[ch]}};
+  const boxes=[box(0,m)],target=256-reserved.length;
+  while(boxes.length<target){
+    let bi=-1,best=0;for(let i=0;i<boxes.length;i++){const b=boxes[i];if(b.e-b.s>1){const sc=b.range*Math.sqrt(b.e-b.s);if(sc>best){best=sc;bi=i}}}
+    if(bi<0||best===0)break;
+    const b=boxes[bi],ch=b.ch;idx.subarray(b.s,b.e).sort((x,y)=>pts[x*3+ch]-pts[y*3+ch]);
+    const mid=(b.s+b.e)>>1;boxes.splice(bi,1,box(b.s,mid),box(mid,b.e));
+  }
+  const pal=reserved.slice();
+  for(const b of boxes){let r=0,g=0,bl=0;const k=b.e-b.s;if(!k)continue;for(let i=b.s;i<b.e;i++){const p=idx[i]*3;r+=pts[p];g+=pts[p+1];bl+=pts[p+2]}pal.push([Math.round(r/k),Math.round(g/k),Math.round(bl/k)])}
+  while(pal.length<256)pal.push([0,0,0]);
+  const P=pal.length>256?pal.slice(0,256):pal;
+  const used=Math.min(256,reserved.length+boxes.length);
+  const cache=new Int16Array(32768).fill(-1),out=new Uint8Array(n);
+  for(let i=0;i<n;i++){const o=i<<2,r=px[o],g=px[o+1],b=px[o+2],key=((r>>3)<<10)|((g>>3)<<5)|(b>>3);
+    let c=cache[key];
+    if(c<0){let bd=1e9;for(let j=0;j<used;j++){const q=P[j],dr=q[0]-r,dg=q[1]-g,db=q[2]-b,d=dr*dr*2+dg*dg*4+db*db*3;if(d<bd){bd=d;c=j;if(!d)break}}cache[key]=c}
+    out[i]=c;}
+  return{pal:P,ind:out};
+}
+function lzw(ind,B){
+  const min=8,clear=256,eoi=257;let size=9,next=258;const dict=new Map();
+  const data=[];let cur=0,bits=0;
+  const emit=c=>{cur|=c<<bits;bits+=size;while(bits>=8){data.push(cur&255);cur>>>=8;bits-=8}};
+  emit(clear);let pre=ind[0];
+  for(let i=1;i<ind.length;i++){const k=ind[i],key=(pre<<8)|k,c=dict.get(key);
+    if(c!==undefined){pre=c;continue}
+    emit(pre);
+    if(next<4096){dict.set(key,next++);if(next>(1<<size)&&size<12)size++}
+    else{emit(clear);dict.clear();size=9;next=258}
+    pre=k;}
+  emit(pre);emit(eoi);if(bits>0)data.push(cur&255);
+  B.b(min);
+  for(let i=0;i<data.length;i+=255){const len=Math.min(255,data.length-i);B.b(len);for(let j=0;j<len;j++)B.b(data[i+j])}
+  B.b(0);
+}
+const yieldUI=()=>new Promise(r=>setTimeout(r,0));
+async function encode(onProg){
+  const {W,H}=geom(),fr=plan();
+  const c=document.createElement("canvas");c.width=W;c.height=H;const ctx=c.getContext("2d",{willReadFrequently:true});
+  const list=[];let prev=null;
+  for(let i=0;i<fr.length;i++){
+    draw(ctx,W,H,fr[i]);const d=ctx.getImageData(0,0,W,H).data;
+    let same=false;if(prev){const a=new Uint32Array(prev.buffer),b=new Uint32Array(d.buffer);same=true;for(let j=0;j<a.length;j++)if(a[j]!==b[j]){same=false;break}}
+    if(same)list[list.length-1].delay+=STEP;else{list.push({d,delay:STEP});prev=d}
+    if(i%8===0){onProg(.25*i/fr.length);await yieldUI()}
+  }
+  const bg=hex(S.bg),fg=hex(S.fg),mix=t=>bg.map((v,k)=>Math.round(v+(fg[k]-v)*t));
+  const reserved=[bg,fg,mix(.25),mix(.5),mix(.75)];
+  const B=new Bytes();
+  B.s("GIF89a");B.w(W);B.w(H);B.b(0);B.b(0);B.b(0);
+  B.b(0x21);B.b(0xFF);B.b(11);B.s("NETSCAPE2.0");B.b(3);B.b(1);B.w(0);B.b(0);
+  for(let i=0;i<list.length;i++){
+    const {d,delay}=list[i],q=quantize(d,reserved);
+    B.b(0x21);B.b(0xF9);B.b(4);B.b(1<<2);B.w(Math.round(delay/10));B.b(0);B.b(0);
+    B.b(0x2C);B.w(0);B.w(0);B.w(W);B.w(H);B.b(0x87);
+    const ct=new Uint8Array(768);q.pal.forEach((p,j)=>{ct[j*3]=p[0];ct[j*3+1]=p[1];ct[j*3+2]=p[2]});B.arr(ct);
+    lzw(q.ind,B);
+    onProg(.25+.75*(i+1)/list.length);await yieldUI();
+  }
+  B.b(0x3B);
+  return{blob:new Blob([B.out()],{type:"image/gif"}),W,H,frames:list.length,secs:fr.length*STEP/1000};
+}
+
+/* ---------- export ---------- */
+const plainDL={save:({filename,data})=>{const u=URL.createObjectURL(data),a=document.createElement("a");a.href=u;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),4000);return Promise.resolve({status:"saved"});}};
+const dlP=(window.claude&&window.claude.use)?window.claude.use("downloads").catch(()=>null):Promise.resolve(plainDL);
+let dl=null;dlP.then(x=>{dl=x;$("save").hidden=!dl||!lastBlob;$("saveHint").hidden=!!dl;});
+let lastBlob=null,lastURL=null;
+function setStatus(t,err){const s=$("status");s.textContent=t;s.classList.toggle("err",!!err)}
+$("make").addEventListener("click",async()=>{
+  const btn=$("make"),bar=$("prog"),fill=bar.querySelector("i");
+  btn.disabled=true;btn.textContent="生成中...";bar.hidden=false;fill.style.width="0%";setStatus("");
+  try{
+    await Promise.all([fontLoad(fontOf(S.font),needText()),fontLoad(fontOf(S.font2),needText())]);
+    const r=await encode(p=>fill.style.width=Math.round(p*100)+"%");
+    if(lastURL)URL.revokeObjectURL(lastURL);
+    lastBlob=r.blob;lastURL=URL.createObjectURL(r.blob);
+    $("out").src=lastURL;$("result").hidden=false;$("result").scrollIntoView({behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth",block:"nearest"});
+    const kb=r.blob.size/1024;
+    $("outMeta").textContent=r.W+"×"+r.H+" · "+r.frames+" 幀 · "+r.secs.toFixed(1)+" 秒／輪 · "+(kb>1024?(kb/1024).toFixed(2)+" MB":Math.round(kb)+" KB");
+    $("save").hidden=!dl;$("saveHint").hidden=!!dl;
+    setStatus("完成。");
+  }catch(e){setStatus("生成失敗："+(e&&e.message||e)+"。可以試著縮小尺寸或減少圖片再試一次。",true)}
+  finally{btn.disabled=false;btn.textContent="生成 GIF";setTimeout(()=>bar.hidden=true,600)}
+});
+$("save").addEventListener("click",async()=>{
+  if(!dl||!lastBlob)return;
+  const d=new Date(),p=n=>String(n).padStart(2,"0");
+  const name="loading-"+d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+"-"+p(d.getHours())+p(d.getMinutes())+".gif";
+  try{await dl.save({filename:name,data:lastBlob});setStatus("已交給瀏覽器下載："+name);}
+  catch(e){const c=e&&e.code;
+    if(c==="declined")setStatus("已取消下載。");
+    else if(c==="rate_limited")setStatus("下載視窗已經開著，請先處理它。");
+    else if(c==="too_large")setStatus("檔案太大，請縮小尺寸後再試。",true);
+    else{setStatus("這個檢視無法直接下載，請在圖片上按右鍵（手機長按）另存。",true);$("save").hidden=true;$("saveHint").hidden=false;}}
+});
+
+/* ---------- boot ---------- */
+renderThumbs();syncMode();setColor("bg",S.bg);setColor("fg",S.fg);refresh();
+})();
+</script>
+</body>
+</html>
