@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="description" content="上傳圖片、框選區塊、輸入文字，產生雜訊亂碼後黑屏或換圖的 GIF 動畫。">
 <title>Breach GIF 雜訊動畫產生器</title>
+<script src="../shared/font-source.js" data-fallback="none"></script>
 <style>
 @font-face{font-family:"Chakra Petch";font-weight:600;font-style:normal;font-display:swap;src:url(../fonts/chakra-petch-600.woff) format("woff")}
 @font-face{font-family:"IBM Plex Mono";font-weight:400;font-style:normal;font-display:swap;src:url(../fonts/ibm-plex-mono-400.woff) format("woff")}
@@ -165,6 +166,8 @@ input[type=range]{accent-color:var(--accent);width:100%}
     </section>
 
     <aside class="panel" aria-label="設定">
+      <div class="tabbar" data-tabs="breach"></div>
+      <div class="pane" data-label="圖片">
       <div class="group">
         <h2>模式</h2>
         <div class="seg" role="group" aria-label="動畫模式">
@@ -173,7 +176,6 @@ input[type=range]{accent-color:var(--accent);width:100%}
         </div>
         <p class="hint" id="modeHint">雜訊與亂碼過後，區塊黑屏並顯示文字。</p>
       </div>
-
       <div class="group">
         <h2><span class="only-swap">第一張</span>圖片</h2>
         <div class="row">
@@ -182,7 +184,6 @@ input[type=range]{accent-color:var(--accent);width:100%}
         </div>
         <p class="hint">也可以直接把圖片拖到畫面上，或按 Ctrl/⌘+V 貼上。</p>
       </div>
-
       <div class="group only-swap">
         <h2>第二張圖片</h2>
         <div class="row">
@@ -205,7 +206,6 @@ input[type=range]{accent-color:var(--accent);width:100%}
         </div>
         <p class="hint">「和第一張同位置」適合兩張尺寸相同的前後對照圖，會裁出同一塊位置。</p>
       </div>
-
       <div class="group">
         <h2>區塊</h2>
         <div class="row" style="justify-content:space-between">
@@ -213,16 +213,25 @@ input[type=range]{accent-color:var(--accent);width:100%}
           <button class="btn" id="resetRegion" type="button">置中重設</button>
         </div>
       </div>
+      </div>
 
+      <div class="pane" data-label="文字">
       <div class="group">
         <h2>文字</h2>
         <label class="field"><span>主文字</span><input type="text" id="main" maxlength="40" value="SYSTEM HACKED"></label>
         <label class="field"><span>副文字<em>留空則不顯示</em></span><input type="text" id="sub" maxlength="60" value="所有資料已被加密"></label>
         <label class="check only-swap"><input type="checkbox" id="showText">換圖後顯示文字</label>
+        <label class="field"><span>文字字體<em>可在下方上傳自己的字體</em></span><select id="textFont"><option value="">預設（IBM Plex Mono＋思源黑體）</option></select></label>
         <label class="check"><input type="checkbox" id="type" checked>以打字效果出現</label>
         <label class="field"><span>文字顯示時間<em id="textDurV"></em></span><input type="range" id="textDur" min="0" max="6" step="0.5" value="0"></label>
       </div>
+      <div class="group">
+        <h2>自訂字體</h2>
+        <div id="userFonts"></div>
+      </div>
+      </div>
 
+      <div class="pane" data-label="效果">
       <div class="group">
         <h2>效果</h2>
         <div class="field"><span>色調</span>
@@ -255,7 +264,9 @@ input[type=range]{accent-color:var(--accent);width:100%}
         <label class="field"><span>干擾強度<em id="ampV"></em></span><input type="range" id="amp" min="0.4" max="1.6" step="0.1" value="1"></label>
         <button class="btn" id="reseed" type="button" style="align-self:flex-start">換一組隨機雜訊</button>
       </div>
+      </div>
 
+      <div class="pane" data-label="輸出">
       <div class="group">
         <h2>時間與輸出</h2>
         <label class="field"><span>開始前停留<em id="preV"></em></span><input type="range" id="pre" min="0" max="5" step="0.5" value="1"></label>
@@ -271,6 +282,7 @@ input[type=range]{accent-color:var(--accent);width:100%}
         </div>
         <label class="check"><input type="checkbox" id="loop" checked>GIF 循環播放</label>
       </div>
+      </div>
 
       <div class="actions">
         <button class="btn-primary" id="gen" type="button">生成 GIF</button>
@@ -285,6 +297,8 @@ input[type=range]{accent-color:var(--accent);width:100%}
 <input type="file" id="file" accept="image/*" hidden>
 <input type="file" id="file2" accept="image/*" hidden>
 
+<script src="../shared/user-fonts.js"></script>
+<script src="../shared/tabs.js"></script>
 <script>
 (() => {
 const $ = id => document.getElementById(id);
@@ -423,8 +437,9 @@ function noiseFill(ctx, r, alpha){
   ctx.globalAlpha = 1;
 }
 function scanlines(ctx, a){ const R = P.R; ctx.globalAlpha = a; ctx.drawImage(P.scan, R.x,R.y,R.w,R.h, R.x,R.y,R.w,R.h); ctx.globalAlpha = 1; }
-function fontMain(size){ return `600 ${size}px "IBM Plex Mono","Noto Sans TC",monospace`; }
-function fontSub(size){ return `500 ${size}px "Noto Sans TC","IBM Plex Mono",sans-serif`; }
+let userFam = "";
+function fontMain(size){ return userFam ? `400 ${size}px "${userFam}","IBM Plex Mono","Noto Sans TC",monospace` : `600 ${size}px "IBM Plex Mono","Noto Sans TC",monospace`; }
+function fontSub(size){ return userFam ? `400 ${size}px "${userFam}","Noto Sans TC",sans-serif` : `500 ${size}px "Noto Sans TC","IBM Plex Mono",sans-serif`; }
 function fit(ctx, text, fontFn, maxW, maxH){ ctx.font = fontFn(100); const w = ctx.measureText(text).width || 1; return Math.max(6, Math.min(maxH, 100 * maxW / w)); }
 
 function glitchText(ctx, r, K){
@@ -962,9 +977,27 @@ $('save').onclick = () => {
   document.body.appendChild(a); a.click(); a.remove();
 };
 
+/* user fonts */
+if (window.UserFonts){
+  const tf = $('textFont');
+  UserFonts.mount($('userFonts'));
+  UserFonts.onChange(list => {
+    const keep = userFam;
+    tf.innerHTML = '<option value="">預設（IBM Plex Mono＋思源黑體）</option>';
+    list.forEach(f => { const o = document.createElement('option'); o.value = f.family; o.textContent = '自訂：' + f.name; tf.append(o); });
+    userFam = list.some(f => f.family === keep) ? keep : '';
+    tf.value = userFam; draw();
+  });
+  tf.onchange = () => {
+    userFam = tf.value; draw();
+    if (userFam) document.fonts.load(`400 40px "${userFam}"`, opt.main + opt.sub).catch(() => {}).then(draw);
+  };
+} else { $('userFonts').closest('.group').hidden = true; $('textFont').closest('.field').hidden = true; }
+
 /* boot */
 showVals(); setAccent(opt.accent);
 src = drawSample(); prepare(); cur = Math.round((opt.pre + opt.dur*.65)*opt.fps); refresh();
+if (window.FontSource) FontSource.ready.then(() => loadFonts(opt.main + opt.sub)).then(() => draw());
 loadFonts(opt.main + opt.sub).then(() => {
   if ($('src2Label').textContent === '第二張：範例'){ src2 = drawSample2(); }
   if ($('srcLabel').textContent === '範例圖片'){ src = drawSample(); prepare(); refresh(); } else { P.s2dirty = true; draw(); }

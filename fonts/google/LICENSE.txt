@@ -1,0 +1,4 @@
+All fonts in this folder come from Google Fonts and are licensed under the
+SIL Open Font License 1.1 (https://openfontlicense.org).
+Noto Sans TC, Noto Serif TC, LXGW WenKai TC, Chiron GoRound TC, Huninn, Iansui,
+Press Start 2P, Silkscreen, VT323, Bungee, Fredoka.

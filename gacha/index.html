@@ -1,0 +1,907 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="上傳去背人物圖、輸入名字，產生色塊刷入、剪影閃過、角色登場、秀出名字的抽卡風格 GIF。全部在瀏覽器內完成。">
+<title>Summon GIF 抽卡登場動畫產生器</title>
+<script src="../shared/font-source.js"></script>
+<style>
+@font-face{font-family:"Chakra Petch";font-weight:600;font-style:normal;font-display:swap;src:url(../fonts/chakra-petch-600.woff) format("woff")}
+@font-face{font-family:"IBM Plex Mono";font-weight:400;font-style:normal;font-display:swap;src:url(../fonts/ibm-plex-mono-400.woff) format("woff")}
+@font-face{font-family:"IBM Plex Mono";font-weight:600;font-style:normal;font-display:swap;src:url(../fonts/ibm-plex-mono-600.woff) format("woff")}
+/* Layout: same two-pane workbench as Breach/Loading — monitor + image strip on the left, control rack on the right; stacks on phones */
+:root{
+  --bg:#0f1217;
+  --panel:#161a21;
+  --raise:#1e232c;
+  --line:#2c333f;
+  --fg:#e3e8f0;
+  --muted:#8b96a8;
+  --accent:#ffb43d;
+  --accent-ink:#1b1306;
+  --danger:#ff6474;
+  --f-display:"Chakra Petch","Noto Sans TC",system-ui,sans-serif;
+  --f-body:"Noto Sans TC",system-ui,-apple-system,"PingFang TC","Microsoft JhengHei",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0}
+html,body{background:var(--bg);color:var(--fg)}
+body{font-family:var(--f-body);font-size:14px;line-height:1.55;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 40px}
+img{max-width:100%}
+.app{max-width:1240px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
+.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:8px 24px;border-bottom:1px solid var(--line);padding-bottom:14px}
+.brand{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.mark{font-family:var(--f-display);font-weight:600;font-size:26px;letter-spacing:.06em;color:var(--accent)}
+.mark b{color:var(--fg);font-weight:600}
+h1{margin:0;font-size:17px;font-weight:500;color:var(--fg)}
+.lede{margin:0;color:var(--muted);max-width:60ch;text-wrap:pretty}
+.privacy{display:inline-block;margin-top:4px;font-size:12.5px;color:var(--fg);opacity:.8}
+.privacy::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent);margin-right:7px;vertical-align:middle}
+.home{color:var(--accent);font-size:13px}
+.layout{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:24px;align-items:start}
+@media (max-width:880px){.layout{grid-template-columns:minmax(0,1fr)}}
+.stage{display:flex;flex-direction:column;gap:10px;min-width:0}
+.stage-bar{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.chips{display:flex;gap:6px;flex-wrap:wrap;min-width:0}
+.chip{font-family:var(--f-mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:3px 8px;border:1px solid var(--line);border-radius:3px;color:var(--muted);white-space:nowrap}
+.mono{font-family:var(--f-mono);font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.monitor{position:relative;background:
+   repeating-linear-gradient(0deg,transparent 0 3px,rgba(255,255,255,.015) 3px 4px),#0a0c10;
+  border:1px solid var(--line);border-radius:6px;padding:16px;display:grid;place-items:center;min-height:240px}
+#preview{display:block;max-width:100%;height:auto}
+.hint{margin:0;color:var(--muted);font-size:12.5px}
+
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible,input:focus-visible,select:focus-visible,label:focus-within>span{outline:2px solid var(--accent);outline-offset:2px}
+.btn{display:inline-flex;align-items:center;gap:8px;background:var(--raise);border:1px solid var(--line);border-radius:4px;padding:7px 12px;font-size:13px}
+.btn:hover{border-color:var(--muted)}
+.btn-primary{width:100%;justify-content:center;background:var(--accent);color:var(--accent-ink);border:0;border-radius:4px;padding:12px;font-weight:700;font-size:15px;letter-spacing:.04em}
+.btn-primary:hover{filter:brightness(1.08)}
+button:disabled{opacity:.45;cursor:not-allowed}
+
+/* image strip */
+.strip{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:14px 16px;display:flex;flex-direction:column;gap:10px}
+.strip-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.strip-head h2,.group h2{margin:0;font:600 11px/1 var(--f-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.drop{border:1px dashed var(--line);border-radius:4px;padding:12px;text-align:center;color:var(--muted);cursor:pointer;background:var(--raise);font-size:13px}
+.drop:hover,.drop.over{border-color:var(--accent);color:var(--fg)}
+.drop strong{color:var(--accent);font-weight:500}
+.thumbs{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:8px;list-style:none;margin:0;padding:0}
+.thumb{position:relative;border:1px solid var(--line);border-radius:4px;overflow:hidden;background:var(--raise);display:flex;flex-direction:column}
+.thumb.dragging{opacity:.4}
+.thumb.target{outline:2px solid var(--accent);outline-offset:1px}
+.thumb .pic{aspect-ratio:1;width:100%;max-width:100%;object-fit:cover;display:block;background:#0a0c10;cursor:grab}
+.thumb .num{position:absolute;top:4px;left:4px;font:600 11px/1 var(--f-mono);background:var(--accent);color:var(--accent-ink);padding:3px 5px;border-radius:2px}
+.thumb .tag{position:absolute;top:4px;right:4px;font:600 10px/1 var(--f-mono);letter-spacing:.06em;background:#0a0c10cc;color:var(--muted);padding:3px 5px;border-radius:2px;border:1px solid var(--line)}
+.thumb .acts{display:flex;border-top:1px solid var(--line)}
+.thumb .acts button{flex:1;border:0;background:none;color:var(--fg);padding:5px 0;font-size:12px}
+.thumb .acts button+button{border-left:1px solid var(--line)}
+.thumb .acts button:hover{background:var(--line)}
+.thumb .acts button:disabled{opacity:.25;background:none}
+.thumb .acts .del{color:var(--danger)}
+
+/* control rack */
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:6px;display:flex;flex-direction:column}
+.group{padding:14px 16px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:10px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.field{display:flex;flex-direction:column;gap:5px;min-width:0}
+.field>span{font-size:12.5px;color:var(--fg)}
+.val{font-style:normal;color:var(--muted);font-family:var(--f-mono);font-size:11.5px;margin-left:6px;font-variant-numeric:tabular-nums}
+input[type=text],select{width:100%;background:var(--raise);border:1px solid var(--line);border-radius:4px;color:var(--fg);padding:8px 10px;font:inherit;font-size:13.5px}
+input[type=range]{accent-color:var(--accent);width:100%}
+.check{display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer}
+.check input{accent-color:var(--accent);width:16px;height:16px}
+/* segmented control (radio based) */
+.seg{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--line);border-radius:4px;overflow:hidden}
+.seg label{position:relative;cursor:pointer;display:block}
+.seg input{position:absolute;opacity:0;pointer-events:none}
+.seg span{display:flex;align-items:center;justify-content:center;gap:6px;height:100%;background:var(--raise);padding:9px 6px;font-size:13.5px;color:var(--fg);text-align:center}
+.seg label:nth-child(even) span{border-left:1px solid var(--line)}
+.seg label:nth-child(n+3) span{border-top:1px solid var(--line)}
+.seg input:checked+span{background:var(--accent);color:var(--accent-ink);font-weight:700}
+.seg label:focus-within>span{outline-offset:-2px}
+.bar-ico{display:inline-block;width:26px;height:9px;flex:none}
+.bi-outline{border:2px solid currentColor;padding:1px;background:linear-gradient(90deg,currentColor 0 60%,transparent 60%) content-box}
+.bi-solid{background:linear-gradient(90deg,currentColor 0 60%,transparent 60%)}
+.colors{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.color{display:flex;align-items:center;gap:8px;cursor:pointer}
+.color input[type=color]{width:34px;height:28px;border:1px solid var(--line);border-radius:4px;background:var(--raise);padding:2px;cursor:pointer;flex:none}
+.color .t{display:flex;flex-direction:column;line-height:1.3;font-size:12.5px}
+.color .val{margin-left:0}
+.swatches{display:flex;gap:6px;flex-wrap:wrap}
+.swatches button{display:flex;align-items:center;gap:6px;background:var(--raise);border:1px solid var(--line);border-radius:4px;padding:4px 8px 4px 4px;font-size:12px}
+.swatches button:hover{border-color:var(--muted)}
+.swatches i{display:inline-flex;width:22px;height:16px;border-radius:2px;overflow:hidden;border:1px solid var(--line)}
+.swatches i b{flex:1}
+.actions{padding:16px;display:flex;flex-direction:column;gap:10px}
+.bar{height:6px;background:var(--raise);border-radius:3px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .1s}
+.status{margin:0;font-size:12.5px;color:var(--muted);min-height:1.2em}
+.status.err{color:var(--danger)}
+
+.result{display:flex;flex-direction:column;gap:10px;border:1px solid var(--line);border-radius:6px;padding:14px;background:var(--panel)}
+.result-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.result-head strong{font-family:var(--f-display);font-weight:600;letter-spacing:.06em;font-size:15px}
+.result img{display:block;max-width:100%;height:auto;max-height:60vh;margin:0 auto;border-radius:3px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+
+.transport{display:flex;align-items:center;gap:12px}
+.transport input{flex:1;min-width:0}
+.btn svg{width:12px;height:12px;fill:currentColor}
+.char-row{display:grid;grid-template-columns:120px minmax(0,1fr);gap:12px;align-items:start}
+@media (max-width:480px){.char-row{grid-template-columns:minmax(0,1fr)}}
+.char-thumb{aspect-ratio:3/4;max-width:100%;border:1px solid var(--line);border-radius:4px;display:grid;place-items:center;padding:6px;
+  background:repeating-conic-gradient(#232a35 0 25%,#1a2029 0 50%) 0 0/14px 14px}
+.char-thumb img{max-height:100%;max-width:100%;object-fit:contain;display:block}
+.char-side{display:flex;flex-direction:column;gap:10px;min-width:0}
+.opaque{display:flex;flex-direction:column;gap:8px}
+.warn{color:var(--accent)}
+.colors{grid-template-columns:1fr 1fr}
+textarea{width:100%;background:var(--raise);border:1px solid var(--line);border-radius:4px;color:var(--fg);padding:8px 10px;font:inherit;font-size:13.5px;resize:vertical;min-height:58px}
+.seg5{grid-template-columns:repeat(5,1fr)}
+.seg5 label span{border-left:1px solid var(--line);border-top:0!important}
+.seg5 label:first-child span{border-left:0}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <header class="top">
+    <div class="brand"><span class="mark">SUMMON<b>.GIF</b></span><h1>抽卡登場動畫產生器</h1></div>
+    <p class="lede">上傳一張去背人物圖（也可以是 GIF 動圖）、輸入名字，產生「色塊刷入 → 剪影閃過 → 角色登場 → 秀出名字」的抽卡風格 GIF。<br><span class="privacy">所有處理都在你的瀏覽器內完成，圖片不會上傳到任何伺服器。<span id="fontNote"></span></span><br><a class="home" href="../index.html">← 回到全部工具</a></p>
+  </header>
+
+  <main class="layout">
+    <section class="stage">
+      <div class="stage-bar">
+        <div class="chips"><span class="chip" id="srcLabel">範例角色</span><span class="chip" id="loopLabel">無限循環</span></div>
+        <span class="mono" id="dims">480×270</span>
+      </div>
+      <div class="monitor"><canvas id="preview" width="480" height="270" aria-label="動畫預覽"></canvas></div>
+      <div class="transport">
+        <button class="btn" id="play" type="button"><svg viewBox="0 0 12 12" aria-hidden="true"><path id="playIcon" d="M2 1h3v10H2zM7 1h3v10H7z"/></svg><span id="playText">暫停</span></button>
+        <input type="range" id="scrub" min="0" max="100" value="0" step="1" aria-label="時間軸">
+        <span class="mono" id="time">0.00 / 0.00s</span>
+      </div>
+
+      <div class="strip">
+        <div class="strip-head"><h2>人物圖片</h2><span class="hint">建議用去背的 PNG 或 GIF，四周留白會自動裁掉</span></div>
+        <div class="char-row">
+          <div class="char-thumb"><img id="thumb" alt="目前的人物圖"></div>
+          <div class="char-side">
+            <label class="drop" id="drop" for="file"><strong>選擇人物圖</strong>，或拖曳、貼上圖片到這裡。GIF 動圖會在剪影時播放前 1 秒，登場後繼續動。</label>
+            <input type="file" id="file" accept="image/*" hidden>
+            <div id="opaqueBox" hidden class="opaque">
+              <p class="hint warn">這張圖沒有透明背景，剪影會變成一整塊方形。</p>
+              <label class="check"><input type="checkbox" id="removeBg">自動去除邊緣的底色</label>
+              <label class="field" id="tolRow" hidden><span>去背容許度<em class="val" id="tolVal">40</em></span>
+                <input type="range" id="tol" min="5" max="120" step="5" value="40"></label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="result" id="result" hidden>
+        <div class="result-head"><strong>輸出結果</strong><span class="mono" id="outMeta"></span></div>
+        <img id="out" alt="生成的 GIF 動畫">
+        <div class="row">
+          <button class="btn" id="save" type="button" hidden>儲存 GIF</button>
+          <span class="hint" id="saveHint">也可以在圖片上按右鍵（手機長按）另存。</span>
+        </div>
+      </div>
+    </section>
+
+    <aside class="panel" aria-label="設定">
+      <div class="tabbar" data-tabs="summon"></div>
+      <div class="pane" data-label="角色">
+      <div class="group">
+        <h2>角色資訊</h2>
+        <label class="field"><span>名字</span><input type="text" id="name" value="艾琳" maxlength="20"></label>
+        <label class="field"><span>稱號<em class="val">顯示在名字上方，可留空</em></span><input type="text" id="sub" value="夜行偵探" maxlength="24"></label>
+        <div class="seg" role="radiogroup" aria-label="稀有度顯示方式">
+          <label><input type="radio" name="rankMode" value="stars" checked><span>星星</span></label>
+          <label><input type="radio" name="rankMode" value="rarity"><span>N／R／SR／SSR／UR</span></label>
+        </div>
+        <label class="field" data-rank="stars"><span>星數<em class="val" id="starsVal">5 ★</em></span>
+          <input type="range" id="stars" min="0" max="6" step="1" value="5"></label>
+        <div class="field" data-rank="rarity" hidden><span>稀有度</span>
+          <div class="seg seg5" role="radiogroup" aria-label="稀有度">
+            <label><input type="radio" name="rarity" value="N"><span>N</span></label>
+            <label><input type="radio" name="rarity" value="R"><span>R</span></label>
+            <label><input type="radio" name="rarity" value="SR"><span>SR</span></label>
+            <label><input type="radio" name="rarity" value="SSR" checked><span>SSR</span></label>
+            <label><input type="radio" name="rarity" value="UR"><span>UR</span></label>
+          </div>
+        </div>
+        <label class="field" data-rank="rarity" hidden><span>稀有度字體</span><select id="rankFont"></select></label>
+        <label class="check" data-rank="rarity" hidden><input type="checkbox" id="rainbow">彩虹漸層（選 UR 時自動開啟）</label>
+        <label class="field"><span>字體</span><select id="font"></select></label>
+        <label class="field"><span>名字大小<em class="val" id="nameScaleVal">100%</em></span>
+          <input type="range" id="nameScale" min="60" max="160" step="5" value="100"></label>
+      </div>
+      </div>
+
+      <div class="pane" data-label="台詞">
+      <div class="group">
+        <h2>台詞</h2>
+        <label class="field"><span>台詞<em class="val">角色登場後出現在旁邊，留空則不顯示；可換行</em></span>
+          <textarea id="line" rows="2" maxlength="80">今晚的月色，很適合查案。</textarea></label>
+        <div class="seg" role="radiogroup" aria-label="台詞排列">
+          <label><input type="radio" name="lineDir" value="h" checked><span>橫排</span></label>
+          <label><input type="radio" name="lineDir" value="v"><span>直排</span></label>
+        </div>
+        <div class="two">
+          <label class="field"><span>出現方式</span>
+            <select id="lineFx"><option value="fade">淡入微移</option><option value="type">逐字出現</option><option value="slide">快速滑入</option></select></label>
+          <label class="field"><span>字體</span><select id="lineFont"></select></label>
+        </div>
+        <label class="field"><span>台詞大小<em class="val" id="lineScaleVal">100%</em></span>
+          <input type="range" id="lineScale" min="50" max="200" step="5" value="100"></label>
+        <div class="two">
+          <label class="field"><span>水平位置<em class="val" id="lineXVal">0</em></span>
+            <input type="range" id="lineX" min="-40" max="40" step="1" value="0"></label>
+          <label class="field"><span>垂直位置<em class="val" id="lineYVal">0</em></span>
+            <input type="range" id="lineY" min="-10" max="70" step="1" value="0"></label>
+        </div>
+        <label class="color"><input type="color" id="lineColor" value="#141414"><span class="t">台詞顏色<span class="val" id="lineColorHex"></span></span></label>
+        <div class="row" style="gap:16px">
+          <label class="check"><input type="checkbox" id="lineBrackets" checked>自動加上「」</label>
+          <label class="check"><input type="checkbox" id="lineStroke" checked>底色描邊</label>
+        </div>
+      </div>
+      </div>
+
+      <div class="pane" data-label="版面">
+      <div class="group">
+        <h2>版面</h2>
+        <div class="seg" role="radiogroup" aria-label="人物位置">
+          <label><input type="radio" name="side" value="right" checked><span>人物在右</span></label>
+          <label><input type="radio" name="side" value="left"><span>人物在左</span></label>
+        </div>
+        <label class="field"><span>人物大小<em class="val" id="charScaleVal">100%</em></span>
+          <input type="range" id="charScale" min="50" max="160" step="5" value="100"></label>
+        <label class="field"><span>人物水平位置<em class="val" id="charXVal">0</em></span>
+          <input type="range" id="charX" min="-25" max="25" step="1" value="0"></label>
+        <label class="field"><span>人物垂直位置<em class="val" id="charYVal">0</em></span>
+          <input type="range" id="charY" min="-30" max="30" step="1" value="0"></label>
+        <label class="check"><input type="checkbox" id="dropShadow" checked>角色登場時加上黑影</label>
+        <label class="field"><span>刷入色塊角度<em class="val" id="wedgeAngVal">0°</em></span>
+          <input type="range" id="wedgeAng" min="-60" max="60" step="5" value="0"></label>
+        <label class="field"><span>名字色塊落下角度<em class="val" id="bandAngVal">0°</em></span>
+          <input type="range" id="bandAng" min="-45" max="45" step="5" value="0"></label>
+        <p class="hint">以預設方向為 0°。名字色塊會繞著名字的位置轉，名字會盡量留在色塊上。</p>
+      </div>
+      </div>
+
+      <div class="pane" data-label="顏色">
+      <div class="group">
+        <h2>顏色</h2>
+        <div class="colors">
+          <label class="color"><input type="color" id="bg" value="#ffffff"><span class="t">底色<span class="val" id="bgHex"></span></span></label>
+          <label class="color"><input type="color" id="shadow" value="#141414"><span class="t">剪影／黑影<span class="val" id="shadowHex"></span></span></label>
+          <label class="color"><input type="color" id="bandA" value="#7d7d7d"><span class="t">刷入色塊<span class="val" id="bandAHex"></span></span></label>
+          <label class="color"><input type="color" id="bandB" value="#8a8a8a"><span class="t">名字色塊<span class="val" id="bandBHex"></span></span></label>
+          <label class="color"><input type="color" id="text" value="#ffffff"><span class="t">文字<span class="val" id="textHex"></span></span></label>
+          <label class="color"><input type="color" id="star" value="#ffc93d"><span class="t">星星／稀有度<span class="val" id="starHex"></span></span></label>
+        </div>
+        <div class="swatches" id="swatches" aria-label="快速配色"></div>
+      </div>
+      </div>
+
+      <div class="pane" data-label="字體">
+      <div class="group">
+        <h2>自訂字體</h2>
+        <div id="userFonts"></div>
+      </div>
+      </div>
+
+      <div class="pane" data-label="輸出">
+      <div class="group">
+        <h2>輸出</h2>
+        <div class="two">
+          <label class="field"><span>寬度</span>
+            <select id="size"><option value="320">320 px</option><option value="400">400 px</option><option value="480" selected>480 px</option><option value="640">640 px</option></select></label>
+          <label class="field"><span>比例</span>
+            <select id="ratio"><option value="0.5625" selected>16 : 9</option><option value="0.75">4 : 3</option><option value="1">1 : 1</option><option value="1.25">4 : 5</option></select></label>
+        </div>
+        <label class="field"><span>動畫速度<em class="val" id="speedVal">1.0×</em></span>
+          <input type="range" id="speed" min="0.5" max="2" step="0.1" value="1"></label>
+        <label class="field"><span>結尾停留<em class="val" id="holdVal">1.5 秒</em></span>
+          <input type="range" id="hold" min="0" max="5" step="0.5" value="1.5"></label>
+        <label class="check"><input type="checkbox" id="loop" checked>無限循環（取消則只播一次）</label>
+      </div>
+      </div>
+
+      <div class="actions">
+        <button class="btn-primary" id="make" type="button">生成 GIF</button>
+        <div class="bar" id="prog" hidden><i></i></div>
+        <p class="status" id="status"></p>
+      </div>
+    </aside>
+  </main>
+</div>
+
+<script src="../shared/user-fonts.js"></script>
+<script src="../shared/tabs.js"></script>
+<script>
+(()=>{
+"use strict";
+if(window.FontSource)FontSource.ready.then(s=>{const n=document.getElementById("fontNote");if(!n)return;
+  n.textContent=s==="local"?"字型也放在本站，不會連到任何外部網站。":s==="google"?"字型暫時從 Google Fonts 下載（不會傳送你輸入的文字）。":"";});
+const $=id=>document.getElementById(id);
+
+/* ---------- fonts (all free, from Google Fonts) ---------- */
+const FONTS=[
+  {fam:"Noto Sans TC",lab:"思源黑體 Noto Sans TC",w:700,cjk:true},
+  {fam:"Noto Serif TC",lab:"思源宋體 Noto Serif TC",w:700,cjk:true},
+  {fam:"LXGW WenKai TC",lab:"霞鶩文楷 LXGW WenKai",w:700,cjk:true},
+  {fam:"Chiron GoRound TC",lab:"昭源圓體 Chiron GoRound",w:700,cjk:true},
+  {fam:"Huninn",lab:"粉圓體 Huninn",w:400,cjk:true},
+  {fam:"Iansui",lab:"芫荽 Iansui（手寫感）",w:400,cjk:true},
+  {fam:"Press Start 2P",lab:"Press Start 2P（像素，僅英數）",w:400,cjk:false},
+  {fam:"Silkscreen",lab:"Silkscreen（像素，僅英數）",w:400,cjk:false},
+  {fam:"VT323",lab:"VT323（終端機，僅英數）",w:400,cjk:false},
+  {fam:"Bungee",lab:"Bungee（粗體招牌，僅英數）",w:400,cjk:false},
+  {fam:"Fredoka",lab:"Fredoka（圓潤，僅英數）",w:600,cjk:false},
+];
+function fontLoad(f,text){
+  if(f.user)return document.fonts.load('400 40px "'+f.fam+'"',text).catch(()=>{});
+  return window.FontSource?FontSource.load(f.fam,f.w,text):Promise.resolve();
+}
+
+function fontOf(fam){return FONTS.find(f=>f.fam===fam)||FONTS[0]}
+
+
+/* ---------- state ---------- */
+const S={frames:[],delays:[],total:0,name:"艾琳",sub:"夜行偵探",stars:5,line:"今晚的月色，很適合查案。",lineDir:"h",lineFx:"fade",lineFont:"LXGW WenKai TC",lineScale:1,lineX:0,lineY:0,lineColor:"#141414",lineBrackets:true,lineStroke:true,rankMode:"stars",rarity:"SSR",rankFont:"Bungee",rainbow:false,wedgeAng:0,bandAng:0,font:"Noto Sans TC",nameScale:1,
+  side:"right",charScale:1,charX:0,charY:0,dropShadow:true,
+  bg:"#ffffff",shadow:"#141414",bandA:"#7d7d7d",bandB:"#8a8a8a",text:"#ffffff",star:"#ffc93d",
+  size:480,ratio:.5625,speed:1,hold:1.5,loop:true,removeBg:false,tol:40};
+const STEP=50;
+let src=null; // {frames:[{cv,delay}], name, sample, opaque}
+
+/* ---------- sample character (drawn locally) ---------- */
+function sampleChar(){
+  const c=document.createElement("canvas");c.width=360;c.height=520;const x=c.getContext("2d");
+  // coat
+  x.fillStyle="#2b3a67";x.beginPath();x.moveTo(60,520);x.quadraticCurveTo(70,330,180,300);x.quadraticCurveTo(290,330,300,520);x.fill();
+  x.fillStyle="#f2f2f2";x.beginPath();x.moveTo(150,305);x.lineTo(180,400);x.lineTo(210,305);x.fill();
+  x.fillStyle="#c23b4a";x.beginPath();x.moveTo(172,320);x.lineTo(188,320);x.lineTo(184,390);x.lineTo(176,390);x.fill();
+  // neck + head
+  x.fillStyle="#f6d2b8";x.fillRect(162,250,36,60);
+  x.beginPath();x.ellipse(180,200,78,88,0,0,7);x.fill();
+  // hair
+  x.fillStyle="#3a2230";x.beginPath();x.moveTo(96,230);x.quadraticCurveTo(80,90,180,96);x.quadraticCurveTo(286,92,268,240);
+  x.quadraticCurveTo(262,170,236,150);x.quadraticCurveTo(200,190,140,160);x.quadraticCurveTo(118,190,112,250);x.closePath();x.fill();
+  x.beginPath();x.moveTo(250,170);x.quadraticCurveTo(300,260,262,330);x.quadraticCurveTo(268,250,240,200);x.fill();
+  // eyes + mouth
+  x.fillStyle="#2a1a2e";x.beginPath();x.ellipse(150,212,9,13,0,0,7);x.ellipse(210,212,9,13,0,0,7);x.fill();
+  x.fillStyle="#fff";x.beginPath();x.arc(153,207,3.5,0,7);x.arc(213,207,3.5,0,7);x.fill();
+  x.strokeStyle="#a0524f";x.lineWidth=3;x.lineCap="round";x.beginPath();x.arc(180,240,10,.2,Math.PI-.2);x.stroke();
+  // hat
+  x.fillStyle="#1d2440";x.beginPath();x.ellipse(180,112,120,22,-.06,0,7);x.fill();
+  x.beginPath();x.moveTo(110,112);x.quadraticCurveTo(116,40,180,38);x.quadraticCurveTo(246,40,250,108);x.fill();
+  x.fillStyle="#c23b4a";x.fillRect(114,92,134,12);
+  return c;
+}
+
+/* ---------- image prep: optional background removal + trim ---------- */
+function isOpaque(img){
+  const iw=img.naturalWidth||img.width,ih=img.naturalHeight||img.height;
+  const c=document.createElement("canvas"),w=c.width=Math.min(200,iw),h=c.height=Math.max(1,Math.round(w*ih/iw));
+  const x=c.getContext("2d",{willReadFrequently:true});x.drawImage(img,0,0,w,h);const d=x.getImageData(0,0,w,h).data;
+  let t=0,n=0;for(let i=0;i<w;i++)for(const j of[0,h-1]){if(d[(j*w+i)*4+3]<250)t++;n++}
+  for(let j=0;j<h;j++)for(const i of[0,w-1]){if(d[(j*w+i)*4+3]<250)t++;n++}
+  return t/n<.05;
+}
+function removeBgData(d,w,h){
+  const ref=[0,(w-1),(h-1)*w,(h*w-1)].map(p=>[d[p*4],d[p*4+1],d[p*4+2]]);
+  const tol=S.tol*S.tol*3,seen=new Uint8Array(w*h),stack=[];
+  const near=p=>{const r=d[p*4],g=d[p*4+1],b=d[p*4+2];for(const q of ref){const a=r-q[0],bb=g-q[1],cc=b-q[2];if(a*a+bb*bb+cc*cc<=tol)return true}return false};
+  for(let i=0;i<w;i++){stack.push(i,(h-1)*w+i)}for(let j=0;j<h;j++){stack.push(j*w,j*w+w-1)}
+  while(stack.length){const p=stack.pop();if(seen[p])continue;seen[p]=1;if(!near(p))continue;d[p*4+3]=0;
+    const px=p%w,py=(p/w)|0;if(px>0)stack.push(p-1);if(px<w-1)stack.push(p+1);if(py>0)stack.push(p-w);if(py<h-1)stack.push(p+w);}
+  for(let p=0;p<w*h;p++){if(d[p*4+3]===0)continue;const px=p%w,py=(p/w)|0;
+    if((px>0&&d[(p-1)*4+3]===0)||(px<w-1&&d[(p+1)*4+3]===0)||(py>0&&d[(p-w)*4+3]===0)||(py<h-1&&d[(p+w)*4+3]===0))d[p*4+3]=150;}
+}
+function prepare(){
+  if(!src)return;
+  const f0=src.frames[0].cv,iw=f0.naturalWidth||f0.width,ih=f0.naturalHeight||f0.height;
+  const lim=src.frames.length>1?900:1400;
+  const k=Math.min(1,lim/Math.max(iw,ih)),w=Math.max(1,Math.round(iw*k)),h=Math.max(1,Math.round(ih*k));
+  const cvs=[];let x0=w,y0=h,x1=-1,y1=-1;
+  for(const f of src.frames){
+    const c=document.createElement("canvas");c.width=w;c.height=h;const x=c.getContext("2d",{willReadFrequently:true});
+    x.drawImage(f.cv,0,0,w,h);const id=x.getImageData(0,0,w,h),d=id.data;
+    if(src.opaque&&S.removeBg){removeBgData(d,w,h);x.putImageData(id,0,0)}
+    for(let j=0;j<h;j++)for(let i=0;i<w;i++){if(d[(j*w+i)*4+3]>12){if(i<x0)x0=i;if(i>x1)x1=i;if(j<y0)y0=j;if(j>y1)y1=j}}
+    cvs.push(c);
+  }
+  if(x1<0){x0=0;y0=0;x1=w-1;y1=h-1}
+  const tw=x1-x0+1,th=y1-y0+1;
+  S.frames=cvs.map(c=>{const t=document.createElement("canvas");t.width=tw;t.height=th;t.getContext("2d").drawImage(c,x0,y0,tw,th,0,0,tw,th);return t});
+  S.delays=src.frames.map(f=>f.delay||100);
+  S.total=S.delays.reduce((a,b)=>a+b,0);
+  sils={key:"",list:[]};
+}
+let sils={key:"",list:[]};
+function silOf(i){
+  if(sils.key!==S.shadow)sils={key:S.shadow,list:[]};
+  if(!sils.list[i]){const f=S.frames[i],c=document.createElement("canvas");c.width=f.width;c.height=f.height;const x=c.getContext("2d");
+    x.drawImage(f,0,0);x.globalCompositeOperation="source-in";x.fillStyle=S.shadow;x.fillRect(0,0,c.width,c.height);sils.list[i]=c}
+  return sils.list[i];
+}
+/* GIF time → frame index; the silhouette phase starts the GIF from 0, so it shows the GIF's first second */
+function frameAt(ms){
+  if(S.frames.length<2)return 0;
+  let t=((ms%S.total)+S.total)%S.total;
+  for(let i=0;i<S.delays.length;i++){if(t<S.delays[i])return i;t-=S.delays[i]}
+  return S.delays.length-1;
+}
+function rebuildChar(){prepare()}
+
+/* ---------- GIF decoder (pure JS, runs locally) ---------- */
+function decodeGif(buf,maxFrames){
+  const d=new Uint8Array(buf);let p=0;
+  const u16=()=>{const v=d[p]|(d[p+1]<<8);p+=2;return v};
+  if(String.fromCharCode(d[0],d[1],d[2])!=="GIF")throw new Error("不是有效的 GIF 檔");
+  p=6;const W=u16(),H=u16(),pk=d[p++];p+=2;
+  let gct=null;if(pk&0x80){const n=3*(1<<((pk&7)+1));gct=d.subarray(p,p+n);p+=n}
+  const screen=new Uint8ClampedArray(W*H*4),frames=[];
+  let gce={disp:0,trans:-1,delay:0},prevDisp=0,prevRect=null,saved=null;
+  const subBlocks=()=>{const parts=[];let len=0;while(p<d.length){const n=d[p++];if(!n)break;parts.push(d.subarray(p,p+n));len+=n;p+=n}
+    const out=new Uint8Array(len);let o=0;for(const s of parts){out.set(s,o);o+=s.length}return out};
+  while(p<d.length&&frames.length<maxFrames){
+    const b=d[p++];
+    if(b===0x3B)break;
+    if(b===0x21){const lab=d[p++];
+      if(lab===0xF9){p++;const f=d[p++];const delay=u16();const ti=d[p++];p++;gce={disp:(f>>2)&7,trans:(f&1)?ti:-1,delay}}
+      else subBlocks();
+      continue}
+    if(b!==0x2C)break;
+    const fx=u16(),fy=u16(),fw=u16(),fh=u16(),ip=d[p++];
+    let ct=gct;if(ip&0x80){const n=3*(1<<((ip&7)+1));ct=d.subarray(p,p+n);p+=n}
+    const min=d[p++],data=subBlocks();
+    // apply previous frame's disposal
+    if(prevDisp===2&&prevRect){const[rx,ry,rw,rh]=prevRect;for(let y=ry;y<ry+rh&&y<H;y++)for(let x=rx;x<rx+rw&&x<W;x++)screen.fill(0,(y*W+x)*4,(y*W+x)*4+4)}
+    else if(prevDisp===3&&saved)screen.set(saved);
+    if(gce.disp===3)saved=screen.slice();
+    const idx=lzwDecode(min,data,fw*fh);
+    const rows=new Int32Array(fh);
+    if(ip&0x40){let r=0;for(const[s,st]of[[0,8],[4,8],[2,4],[1,2]])for(let y=s;y<fh;y+=st)rows[r++]=y}else for(let y=0;y<fh;y++)rows[y]=y;
+    if(ct)for(let r=0;r<fh;r++){const y=fy+rows[r];if(y>=H)continue;
+      for(let x=0;x<fw;x++){const sx=fx+x;if(sx>=W)continue;const ci=idx[r*fw+x];if(ci===gce.trans)continue;
+        const o=(y*W+sx)*4;screen[o]=ct[ci*3];screen[o+1]=ct[ci*3+1];screen[o+2]=ct[ci*3+2];screen[o+3]=255}}
+    const c=document.createElement("canvas");c.width=W;c.height=H;c.getContext("2d").putImageData(new ImageData(screen.slice(),W,H),0,0);
+    frames.push({cv:c,delay:gce.delay<=1?100:gce.delay*10});
+    prevDisp=gce.disp;prevRect=[fx,fy,fw,fh];gce={disp:0,trans:-1,delay:0};
+  }
+  if(!frames.length)throw new Error("GIF 裡沒有可讀的畫面");
+  return frames;
+}
+function lzwDecode(min,data,n){
+  const out=new Uint8Array(n),clear=1<<min,eoi=clear+1;
+  const prefix=new Uint16Array(4096),suffix=new Uint8Array(4096),stack=new Uint8Array(4097);
+  for(let i=0;i<clear;i++)suffix[i]=i;
+  let size=min+1,mask=(1<<size)-1,next=eoi+1,old=-1,first=0,cur=0,bits=0,pos=0,op=0;
+  while(op<n){
+    while(bits<size&&pos<data.length){cur|=data[pos++]<<bits;bits+=8}
+    if(bits<size)break;
+    let code=cur&mask;cur>>>=size;bits-=size;
+    if(code===clear){size=min+1;mask=(1<<size)-1;next=eoi+1;old=-1;continue}
+    if(code===eoi)break;
+    if(old===-1){out[op++]=suffix[code];old=first=code;continue}
+    const inCode=code;let sp=0;
+    if(code>=next){stack[sp++]=first;code=old}
+    while(code>clear){stack[sp++]=suffix[code];code=prefix[code]}
+    first=suffix[code];stack[sp++]=first;
+    if(next<4096){prefix[next]=old;suffix[next]=first;next++;if((next&mask)===0&&next<4096){size++;mask=(1<<size)-1}}
+    old=inCode;
+    while(sp>0&&op<n)out[op++]=stack[--sp];
+  }
+  return out;
+}
+
+/* ---------- dialogue line ---------- */
+const ROT=new Set(Array.from("「」『』（）()《》〈〉【】[]…—ー～~-─:;‥｜|"));
+const PUNC=new Set(Array.from("，。、．,."));
+function lineText(){let s=S.line.replace(/\r/g,"").trim();if(!s)return"";
+  if(S.lineBrackets&&!/^[「『“"]/.test(s))s="「"+s+"」";return s}
+function drawLine(ctx,W,H,t,T,R,cw){
+  const txt=lineText();if(!txt||t<T.line0)return;
+  const k=1/S.speed,p0=T.line0,fo=fontOf(S.lineFont),lines=txt.split("\n").map(l=>Array.from(l));
+  const total=lines.reduce((a,l)=>a+l.length,0),m=Math.min(W,H);
+  let ls=Math.max(10,Math.round(m*.065*S.lineScale));
+  const setF=()=>ctx.font=fo.w+" "+ls+'px "'+fo.fam+'",sans-serif';setF();
+  const fcx=W*(.70+S.charX/100),half=(cw||W*.3)/2;
+  let bl,bw,bt,outer;
+  if(S.lineDir==="h"){
+    let mw=Math.max(...lines.map(l=>ctx.measureText(l.join("")).width));
+    const right=fcx-half*.55,room=right-W*.04;
+    if(mw>room&&room>0){ls=Math.max(10,Math.floor(ls*room/mw));setF();mw=Math.max(...lines.map(l=>ctx.measureText(l.join("")).width))}
+    bw=mw;bl=right-mw;bt=H*.12;outer=-1;
+  }else{
+    const longest=Math.max(...lines.map(l=>l.length));
+    if(longest*ls*1.08>H*.82){ls=Math.max(10,Math.floor(H*.82/(longest*1.08)));setF()}
+    const colW=ls*1.4;bw=lines.length*colW;
+    const rightSpace=W-(fcx+half*.62)-W*.03;
+    if(bw<=rightSpace){bl=fcx+half*.62;outer=1}else{bl=fcx-half*.62-bw;outer=-1}
+    bt=H*.08;
+  }
+  bl+=W*S.lineX/100;bt+=H*S.lineY/100;
+  if(!R){bl=W-(bl+bw);outer=-outer}
+  let shown=total,alpha=1,dx=0,dy=0;
+  if(S.lineFx==="type")shown=Math.floor((t-p0)/(70*k))+1;
+  else if(S.lineFx==="fade"){const p=eo(prog(t,p0,p0+450*k));alpha=p;if(S.lineDir==="h")dx=outer*(1-p)*W*.02;else dy=-(1-p)*H*.03}
+  else{const p=eo(prog(t,p0,p0+280*k));alpha=Math.min(1,p*1.6);dx=outer*(1-p)*W*.10}
+  ctx.save();ctx.globalAlpha=alpha;ctx.fillStyle=S.lineColor;ctx.strokeStyle=S.bg;ctx.lineJoin="round";ctx.lineWidth=Math.max(2,ls*.2);
+  const paint=(s,x,y)=>{if(S.lineStroke)ctx.strokeText(s,x,y);ctx.fillText(s,x,y)};
+  let left=shown;
+  if(S.lineDir==="h"){
+    ctx.textAlign="left";ctx.textBaseline="top";
+    lines.forEach((l,i)=>{if(left<=0)return;const full=ctx.measureText(l.join("")).width;
+      const x=(R?bl+bw-full:bl)+dx,y=bt+i*ls*1.35+dy;paint(l.slice(0,left).join(""),Math.round(x),Math.round(y));left-=l.length});
+  }else{
+    ctx.textAlign="center";ctx.textBaseline="middle";const colW=ls*1.4;
+    lines.forEach((l,i)=>{const cx=bl+bw-colW*(i+.5)+dx;
+      l.forEach((ch,j)=>{if(left<=0)return;left--;const cy=bt+j*ls*1.08+ls/2+dy;
+        if(ROT.has(ch)){ctx.save();ctx.translate(cx,cy);ctx.rotate(Math.PI/2);paint(ch,0,0);ctx.restore()}
+        else if(PUNC.has(ch))paint(ch,cx+ls*.32,cy-ls*.3);
+        else paint(ch,cx,cy)})});
+  }
+  ctx.restore();
+}
+
+/* ---------- timeline ---------- */
+const clamp=v=>v<0?0:v>1?1:v;
+const prog=(t,a,b)=>clamp((t-a)/(b-a));
+const eo=p=>1-Math.pow(1-p,3);
+const eio=p=>p<.5?4*p*p*p:1-Math.pow(-2*p+2,3)/2;
+function TL(){
+  const k=1/S.speed,T={wedge:[0,420*k],sil:[120*k,1150*k],flash:[1150*k,1450*k],bandB:[1150*k,1500*k],
+    char:[1150*k,3000*k],name:[1550*k,1950*k],line:[1650*k,2100*k],sub:[1800*k,2200*k],star0:1950*k,starGap:110*k};
+  const starsEnd=S.rankMode==="rarity"?T.star0+450*k:T.star0+T.starGap*S.stars+250*k;
+  T.line0=2150*k;const lt=lineText(),n=Array.from(lt.replace(/\n/g,"")).length;
+  const lineEnd=!lt?0:S.lineFx==="type"?T.line0+n*70*k+300*k:T.line0+550*k;
+  T.end=Math.max(3000*k,starsEnd,lineEnd)+S.hold*1000;
+  return T;
+}
+function geom(){return{W:S.size,H:Math.round(S.size*S.ratio)}}
+function frameCount(){return Math.max(1,Math.ceil(TL().end/STEP))}
+
+/* ---------- drawing ---------- */
+function star(ctx,cx,cy,r){ctx.beginPath();for(let i=0;i<10;i++){const a=-Math.PI/2+i*Math.PI/5,rr=i%2?r*.45:r;ctx.lineTo(cx+Math.cos(a)*rr,cy+Math.sin(a)*rr)}ctx.closePath();ctx.fill()}
+function draw(ctx,W,H,t){
+  const T=TL(),R=S.side==="right",X=x=>R?x:W-x,m=Math.min(W,H);
+  ctx.save();ctx.fillStyle=S.bg;ctx.fillRect(0,0,W,H);
+  const has=S.frames.length>0,phaseT=t>=T.flash[0]?t-T.char[0]:t-T.sil[0];
+  const fidx=frameAt(Math.max(0,phaseT)),ch=has?S.frames[fidx]:null,sil=has?silOf(fidx):null;
+  let cw=0,chH=0;
+  if(ch){chH=H*.96*S.charScale;cw=chH*ch.width/ch.height;if(cw>W*.9*S.charScale){cw=W*.9*S.charScale;chH=cw*ch.height/ch.width}}
+  const top=H-chH+H*.05+H*S.charY/100;
+  // shapes are defined in fractions of W/H, rotated around a pivot, then mirrored for the left layout
+  const rotP=(pts,cx,cy,a)=>{const c=Math.cos(a),s=Math.sin(a);return pts.map(([x,y])=>{x*=W;y*=H;return[cx+(x-cx)*c-(y-cy)*s,cy+(x-cx)*s+(y-cy)*c]})};
+  const path=pts=>{ctx.beginPath();pts.forEach(([x,y],i)=>i?ctx.lineTo(X(x),y):ctx.moveTo(X(x),y));ctx.closePath()};
+  const wipe=(dx,dy,px,py,p)=>{const cs=[[0,0],[W,0],[0,H],[W,H]].map(([x,y])=>(x-px)*dx+(y-py)*dy);
+    const mn=Math.min(...cs),mx=Math.max(...cs),e=mn+(mx-mn)*p,nx=-dy,ny=dx,B=(W+H)*2;
+    const P=(t,o)=>[px+dx*t+nx*o,py+dy*t+ny*o];path([P(mn-B,-B),P(e,-B),P(e,B),P(mn-B,B)]);ctx.clip()};
+  const phase2=t>=T.flash[0];
+  if(!phase2){
+    // silhouette slides in from the far side, then drifts
+    if(ch&&t>=T.sil[0]){
+      const span=T.sil[1]-T.sil[0],p1=eo(prog(t,T.sil[0],T.sil[0]+span*.55)),p2=prog(t,T.sil[0],T.sil[1]);
+      const off=.32*(1-p1)-.05*p2;
+      const cx=X(W*(.5+off));
+      ctx.globalAlpha=prog(t,T.sil[0],T.sil[0]+90/S.speed);
+      ctx.drawImage(sil,Math.round(cx-cw/2),Math.round(top),Math.round(cw),Math.round(chH));
+      ctx.globalAlpha=1;
+    }
+    // wedge brushing in (thin end first)
+    const pw=eo(prog(t,T.wedge[0],T.wedge[1]));
+    if(pw>0){
+      const a=S.wedgeAng*Math.PI/180,cx=W*.5,cy=H*.62;
+      ctx.save();wipe(Math.cos(a),Math.sin(a),cx,cy,Math.min(1,pw*1.04));
+      ctx.fillStyle=S.bandA;
+      const L=(y0,s0,y1,s1,xa,xb)=>[[xa,y0+s0*xa],[xb,y0+s0*xb],[xb,y1+s1*xb],[xa,y1+s1*xa]];
+      path(rotP(L(.60,-.30,.72,.12,-.25,3),cx,cy,a));ctx.fill();
+      ctx.globalAlpha=.55;path(rotP(L(.555,-.355,.57,-.315,-.3,3),cx,cy,a));ctx.fill();
+      ctx.globalAlpha=.35;path(rotP(L(.75,.13,.758,.142,-.3,3),cx,cy,a));ctx.fill();
+      ctx.restore();
+    }
+  }else{
+    // band dropping from the top
+    const pb=eo(prog(t,T.bandB[0],T.bandB[1]));
+    if(pb>0){const a=S.bandAng*Math.PI/180,ax=W*.30,ay=H*.6;
+      let dx=.28*W,dy=H;const dl=Math.hypot(dx,dy);dx/=dl;dy/=dl;const c=Math.cos(a),sn=Math.sin(a),rx=dx*c-dy*sn,ry=dx*sn+dy*c;
+      ctx.save();wipe(rx,ry,ax,ay,pb);ctx.fillStyle=S.bandB;
+      const V=(x0,s0,x1,s1,ka,kb)=>[[x0+s0*ka,ka],[x1+s1*ka,ka],[x1+s1*kb,kb],[x0+s0*kb,kb]];
+      path(rotP(V(.04,.12,.40,.44,-1,3),ax,ay,a));ctx.fill();
+      ctx.globalAlpha=.4;path(rotP(V(.43,.44,.46,.44,-1,3),ax,ay,a));ctx.fill();ctx.restore();}
+    // character drifting toward the far side
+    if(ch){
+      const pc=eo(prog(t,T.char[0],T.char[1]));
+      const cx=X(W*(.70+S.charX/100-.07*(1-pc)));
+      const a=prog(t,T.char[0],T.char[0]+120/S.speed);
+      if(S.dropShadow){ctx.globalAlpha=a;ctx.drawImage(sil,Math.round(cx-cw/2+(R?1:-1)*W*.035),Math.round(top+H*.012),Math.round(cw),Math.round(chH));}
+      ctx.globalAlpha=a;ctx.drawImage(ch,Math.round(cx-cw/2),Math.round(top),Math.round(cw),Math.round(chH));ctx.globalAlpha=1;
+    }
+    // name, underline, title, stars
+    const fo=fontOf(S.font),name=S.name.trim()||"角色名稱";
+    let fs=Math.round(m*.15*S.nameScale);
+    ctx.font=fo.w+" "+fs+'px "'+fo.fam+'",sans-serif';
+    let tw=ctx.measureText(name).width;const maxW=W*.44;
+    if(tw>maxW){fs=Math.floor(fs*maxW/tw);ctx.font=fo.w+" "+fs+'px "'+fo.fam+'",sans-serif';tw=ctx.measureText(name).width}
+    const baseX=W*.135,ny=Math.round(H*.6);
+    ctx.fillStyle=S.text;ctx.textBaseline="alphabetic";ctx.textAlign=R?"left":"right";
+    const pn=eo(prog(t,T.name[0],T.name[1]));
+    if(pn>0){ctx.globalAlpha=pn;ctx.fillText(name,Math.round(X(baseX-W*.06*(1-pn))),ny);ctx.globalAlpha=1}
+    const pl=eio(prog(t,T.line[0],T.line[1]));
+    const lh=Math.max(2,Math.round(fs*.06)),ly=ny+Math.round(fs*.22);
+    if(pl>0){const len=Math.max(tw*1.15,W*.34)*pl;const lx=R?W*.125:W-W*.125-len;ctx.fillRect(Math.round(lx),ly,Math.round(len),lh)}
+    const sub=S.sub.trim();
+    if(sub){const ps=eo(prog(t,T.sub[0],T.sub[1]));if(ps>0){const ss=Math.max(10,Math.round(fs*.36));
+      ctx.font=fo.w+" "+ss+'px "'+fo.fam+'",sans-serif';ctx.globalAlpha=ps;
+      ctx.fillText(sub,Math.round(X(baseX+W*.005)),Math.round(ny-fs*.95+ss*.3*(1-ps)));ctx.globalAlpha=1}}
+    if(S.rankMode==="rarity"){const p=prog(t,T.star0,T.star0+300/S.speed);if(p>0){
+        const rf=fontOf(S.rankFont),rs=Math.max(12,Math.round(fs*.74)),sc=1+.7*(1-eo(p));
+        ctx.save();ctx.translate(Math.round(X(baseX)),Math.round(ly+lh+rs*1.12));ctx.scale(sc,sc);ctx.transform(1,0,-.16,1,0,0);
+        ctx.font=rf.w+" "+rs+'px "'+rf.fam+'",sans-serif';ctx.textAlign=R?"left":"right";ctx.globalAlpha=eo(Math.min(1,p*1.6));
+        const txt=S.rarity,rw=ctx.measureText(txt).width;
+        let fill=S.star;if(S.rainbow){const x0=R?0:-rw,g=ctx.createLinearGradient(x0,-rs,x0+rw,0);
+          ["#ff5f8f","#ffb347","#fff35c","#5ce1a0","#5cb8ff","#b77cff"].forEach((c2,i,arr)=>g.addColorStop(i/(arr.length-1),c2));fill=g}
+        ctx.lineJoin="round";ctx.lineWidth=Math.max(2,rs*.14);ctx.strokeStyle=S.shadow;ctx.strokeText(txt,0,0);
+        ctx.fillStyle=fill;ctx.fillText(txt,0,0);ctx.restore();}}
+    else if(S.stars>0){const sr=Math.max(5,Math.round(fs*.2)),gap=sr*2.3;ctx.fillStyle=S.star;
+      for(let i=0;i<S.stars;i++){const p=prog(t,T.star0+i*T.starGap,T.star0+i*T.starGap+160/S.speed);if(p<=0)continue;
+        const sc=p<.7?eo(p/.7)*1.25:1.25-.25*((p-.7)/.3);
+        const cx=X(baseX+sr+i*gap);star(ctx,cx,ly+lh+sr*1.9,sr*sc)}}
+    drawLine(ctx,W,H,t,T,R,cw);
+    // white flash on top
+    const fUp=T.flash[0],fa=1-prog(t,T.flash[0],T.flash[1]);
+    if(fa>0&&t<T.flash[1]){ctx.fillStyle="#ffffff";ctx.globalAlpha=fa;ctx.fillRect(0,0,W,H);ctx.globalAlpha=1}
+  }
+  // ramp up into the flash
+  if(!phase2){const pre=prog(t,T.flash[0]-110/S.speed,T.flash[0]);if(pre>0){ctx.fillStyle="#ffffff";ctx.globalAlpha=pre;ctx.fillRect(0,0,W,H);ctx.globalAlpha=1}}
+  ctx.restore();
+}
+
+/* ---------- preview ---------- */
+const pv=$("preview"),pctx=pv.getContext("2d");
+let fi=0,playing=true,timer=0;
+function render(){
+  const {W,H}=geom();if(pv.width!==W||pv.height!==H){pv.width=W;pv.height=H}
+  const n=frameCount();fi=Math.min(fi,n-1);draw(pctx,W,H,fi*STEP);
+  $("scrub").max=n-1;$("scrub").value=fi;$("time").textContent=(fi*STEP/1000).toFixed(2)+" / "+(n*STEP/1000).toFixed(2)+"s";
+}
+function loop(){clearTimeout(timer);if(!playing)return;render();fi=(fi+1)%frameCount();timer=setTimeout(loop,STEP)}
+function setPlay(p){playing=p;$("playText").textContent=p?"暫停":"播放";$("playIcon").setAttribute("d",p?"M2 1h3v10H2zM7 1h3v10H7z":"M2 1l9 5-9 5z");if(p)loop();else{clearTimeout(timer);render()}}
+$("play").onclick=()=>setPlay(!playing);
+$("scrub").addEventListener("input",e=>{fi=+e.target.value;setPlay(false)});
+let rq=0;
+function loadAllFonts(){return Promise.all([fontLoad(fontOf(S.font),needText()),fontLoad(fontOf(S.rankFont),"NRSU"),fontLoad(fontOf(S.lineFont),lineNeed())])}
+function lineNeed(){return Array.from(new Set(Array.from(lineText().replace(/\n/g,"")+"「」"))).join("")}
+async function refresh(){const q=++rq;await loadAllFonts();if(q!==rq)return;
+  const {W,H}=geom();$("dims").textContent=W+"×"+H;$("loopLabel").textContent=S.loop?"無限循環":"播放一次";
+  if(!playing)render();}
+function needText(){return Array.from(new Set(Array.from(S.name+S.sub+"角色名稱NRSU"))).join("")}
+
+/* ---------- image input ---------- */
+function setSource(frames,name,sample){
+  src={frames,name,sample,opaque:sample?false:isOpaque(frames[0].cv)};
+  const n=frames.length;
+  $("srcLabel").textContent=sample?"範例角色":(n>1?"GIF · "+n+" 格":name);
+  $("opaqueBox").hidden=!src.opaque;
+  S.removeBg=src.opaque;$("removeBg").checked=S.removeBg;$("tolRow").hidden=!S.removeBg;
+  rebuildChar();updateThumb();fi=0;refresh();
+}
+function updateThumb(){if(S.frames.length)$("thumb").src=S.frames[0].toDataURL()}
+let lastURL=null;
+async function loadFile(file){
+  if(!file||!(file.type.startsWith("image/")||/\.(png|jpe?g|gif|webp|bmp|avif)$/i.test(file.name))){setStatus("請選擇圖片檔（PNG、JPG、WebP、GIF）。",true);return}
+  if(file.type==="image/gif"||/\.gif$/i.test(file.name)){
+    try{setStatus("正在讀取 GIF...");const frames=decodeGif(await file.arrayBuffer(),240);
+      setStatus(frames.length>=240?"GIF 太長，只取前 240 格。":"");setSource(frames,file.name,false)}
+    catch(e){setStatus("這個 GIF 無法讀取："+(e.message||e),true)}
+    return}
+  const url=URL.createObjectURL(file),img=new Image();
+  img.onload=()=>{if(lastURL)URL.revokeObjectURL(lastURL);lastURL=url;setStatus("");setSource([{cv:img,delay:100}],file.name,false)};
+  img.onerror=()=>{URL.revokeObjectURL(url);setStatus("這個檔案無法讀取（例如 HEIC），請改用 PNG、JPG、WebP 或 GIF。",true)};
+  img.src=url;
+}
+$("file").addEventListener("change",e=>{loadFile(e.target.files[0]);e.target.value=""});
+const drop=$("drop");
+["dragenter","dragover"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("over")}));
+["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,()=>drop.classList.remove("over")));
+document.addEventListener("dragover",e=>e.preventDefault());
+document.addEventListener("drop",e=>{e.preventDefault();const f=e.dataTransfer&&e.dataTransfer.files[0];if(f)loadFile(f)});
+document.addEventListener("paste",e=>{const f=e.clipboardData&&e.clipboardData.files[0];if(f)loadFile(f)});
+$("removeBg").addEventListener("change",e=>{S.removeBg=e.target.checked;$("tolRow").hidden=!S.removeBg;rebuildChar();updateThumb();refresh()});
+let tolT=0;
+$("tol").addEventListener("input",e=>{S.tol=+e.target.value;$("tolVal").textContent=S.tol;clearTimeout(tolT);tolT=setTimeout(()=>{rebuildChar();updateThumb();refresh()},150)});
+
+/* ---------- controls ---------- */
+const sel=$("font");
+function fillSel(el,val,cjk,strip){el.innerHTML="";FONTS.forEach(f=>{const o=document.createElement("option");o.value=f.fam;
+  let lab=strip?f.lab.replace(/（.*?）/g,""):f.lab;if(cjk&&!f.cjk){o.disabled=true;lab+=" — 不支援中文"}o.textContent=lab;el.append(o)});
+  el.value=FONTS.some(f=>f.fam===val)?val:FONTS[0].fam;return el.value}
+fillSel(sel,S.font,false);
+function syncFonts(){const cjk=/[^\x00-\x7f]/.test(S.name+S.sub);if(cjk&&!fontOf(S.font).cjk)S.font="Noto Sans TC";S.font=fillSel(sel,S.font,cjk);
+  const lcjk=/[^\x00-\x7f]/.test(lineText());if(lcjk&&!fontOf(S.lineFont).cjk)S.lineFont="Noto Sans TC";S.lineFont=fillSel($("lineFont"),S.lineFont,lcjk)}
+sel.addEventListener("change",e=>{S.font=e.target.value;refresh()});
+$("name").addEventListener("input",e=>{S.name=e.target.value;syncFonts();refresh()});
+$("sub").addEventListener("input",e=>{S.sub=e.target.value;syncFonts();refresh()});
+const rng=(id,fmt,mul=1)=>{const el=$(id),out=$(id+"Val");const upd=()=>{S[id]=parseFloat(el.value)*mul;out.textContent=fmt(parseFloat(el.value))};el.addEventListener("input",()=>{upd();refresh()});upd()};
+rng("stars",v=>v+" ★");rng("nameScale",v=>v+"%",.01);rng("charScale",v=>v+"%",.01);
+rng("charX",v=>(v>0?"+":"")+v);rng("charY",v=>(v>0?"+":"")+v);
+rng("speed",v=>v.toFixed(1)+"×");rng("wedgeAng",v=>(v>0?"+":"")+v+"°");rng("bandAng",v=>(v>0?"+":"")+v+"°");rng("hold",v=>v.toFixed(1)+" 秒");
+document.querySelectorAll("input[name=side]").forEach(r=>r.addEventListener("change",()=>{S.side=r.value;refresh()}));
+$("dropShadow").addEventListener("change",e=>{S.dropShadow=e.target.checked;refresh()});
+$("loop").addEventListener("change",e=>{S.loop=e.target.checked;refresh()});
+$("size").addEventListener("change",e=>{S.size=+e.target.value;refresh()});
+$("ratio").addEventListener("change",e=>{S.ratio=+e.target.value;refresh()});
+$("line").addEventListener("input",e=>{S.line=e.target.value;syncFonts();refresh()});
+document.querySelectorAll("input[name=lineDir]").forEach(r=>r.addEventListener("change",()=>{S.lineDir=r.value;refresh()}));
+$("lineFx").addEventListener("change",e=>{S.lineFx=e.target.value;refresh()});
+$("lineFont").addEventListener("change",e=>{S.lineFont=e.target.value;refresh()});
+rng("lineScale",v=>v+"%",.01);rng("lineX",v=>(v>0?"+":"")+v);rng("lineY",v=>(v>0?"+":"")+v);
+$("lineBrackets").addEventListener("change",e=>{S.lineBrackets=e.target.checked;refresh()});
+$("lineStroke").addEventListener("change",e=>{S.lineStroke=e.target.checked;refresh()});
+$("lineColor").addEventListener("input",e=>{S.lineColor=e.target.value;$("lineColorHex").textContent=S.lineColor.toUpperCase();refresh()});
+$("lineColorHex").textContent=S.lineColor.toUpperCase();
+const RAR={N:"#a7b0bb",R:"#4f9dff",SR:"#b26bff",SSR:"#ffc93d",UR:"#ff5f8f"};
+function syncRank(){document.querySelectorAll("[data-rank]").forEach(e=>e.hidden=e.dataset.rank!==S.rankMode)}
+document.querySelectorAll("input[name=rankMode]").forEach(r=>r.addEventListener("change",()=>{S.rankMode=r.value;syncRank();refresh()}));
+document.querySelectorAll("input[name=rarity]").forEach(r=>r.addEventListener("change",()=>{S.rarity=r.value;setColor("star",RAR[r.value]);
+  S.rainbow=r.value==="UR";$("rainbow").checked=S.rainbow;refresh()}));
+$("rainbow").addEventListener("change",e=>{S.rainbow=e.target.checked;refresh()});
+const rsel=$("rankFont");fillSel(rsel,S.rankFont,false,true);
+rsel.addEventListener("change",e=>{S.rankFont=e.target.value;refresh()});
+const CK=["bg","shadow","bandA","bandB","text","star"];
+function setColor(k,v){S[k]=v;$(k).value=v;$(k+"Hex").textContent=v.toUpperCase()}
+CK.forEach(k=>{$(k).addEventListener("input",e=>{setColor(k,e.target.value);refresh()});setColor(k,S[k])});
+const PRESETS=[
+  ["經典黑白","#ffffff","#141414","#7d7d7d","#8a8a8a","#ffffff","#ffc93d"],
+  ["金色傳說","#fffaf0","#2a1d08","#d9a23a","#e8b84a","#ffffff","#fff1b8"],
+  ["夜色登場","#0e1424","#000000","#2a3d6e","#33508f","#ffffff","#ffd75e"],
+  ["櫻花","#fff5f8","#3a1724","#e78aa6","#f0a3b9","#ffffff","#ffe08a"],
+  ["琥珀警報","#0f1217","#000000","#ffb43d","#d4922b","#1b1306","#ffffff"],
+];
+PRESETS.forEach(p=>{const b=document.createElement("button");b.type="button";
+  b.innerHTML='<i><b style="background:'+p[1]+'"></b><b style="background:'+p[3]+'"></b><b style="background:'+p[2]+'"></b></i>'+p[0];
+  b.onclick=()=>{CK.forEach((k,i)=>setColor(k,p[i+1]));refresh()};$("swatches").append(b)});
+
+/* ---------- GIF encoder (pure JS, runs locally) ---------- */
+class Bytes{constructor(){this.a=new Uint8Array(1<<16);this.n=0}
+  grow(k){if(this.n+k>this.a.length){let s=this.a.length;while(this.n+k>s)s*=2;const b=new Uint8Array(s);b.set(this.a.subarray(0,this.n));this.a=b}}
+  b(v){this.grow(1);this.a[this.n++]=v&255}
+  w(v){this.b(v);this.b(v>>8)}
+  s(str){for(const c of str)this.b(c.charCodeAt(0))}
+  arr(u){this.grow(u.length);this.a.set(u,this.n);this.n+=u.length}
+  out(){return this.a.slice(0,this.n)}}
+const hex=h=>[parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];
+function quantize(px,reserved){
+  const n=px.length>>2,step=Math.max(1,Math.floor(n/16000)),cnt=Math.ceil(n/step);
+  const pts=new Uint8Array(cnt*3);let m=0;
+  for(let i=0;i<n;i+=step){const o=i<<2;pts[m*3]=px[o];pts[m*3+1]=px[o+1];pts[m*3+2]=px[o+2];m++;}
+  const idx=new Uint32Array(m);for(let i=0;i<m;i++)idx[i]=i;
+  const box=(s,e)=>{let mn=[255,255,255],mx=[0,0,0];for(let i=s;i<e;i++){const p=idx[i]*3;for(let c=0;c<3;c++){const v=pts[p+c];if(v<mn[c])mn[c]=v;if(v>mx[c])mx[c]=v}}
+    const r=[mx[0]-mn[0],mx[1]-mn[1],mx[2]-mn[2]];const ch=r[0]>=r[1]&&r[0]>=r[2]?0:r[1]>=r[2]?1:2;return{s,e,ch,range:r[ch]}};
+  const boxes=[box(0,m)],target=256-reserved.length;
+  while(boxes.length<target){
+    let bi=-1,best=0;for(let i=0;i<boxes.length;i++){const b=boxes[i];if(b.e-b.s>1){const sc=b.range*Math.sqrt(b.e-b.s);if(sc>best){best=sc;bi=i}}}
+    if(bi<0||best===0)break;
+    const b=boxes[bi],ch=b.ch;idx.subarray(b.s,b.e).sort((x,y)=>pts[x*3+ch]-pts[y*3+ch]);
+    const mid=(b.s+b.e)>>1;boxes.splice(bi,1,box(b.s,mid),box(mid,b.e));
+  }
+  const pal=reserved.slice();
+  for(const b of boxes){let r=0,g=0,bl=0;const k=b.e-b.s;if(!k)continue;for(let i=b.s;i<b.e;i++){const p=idx[i]*3;r+=pts[p];g+=pts[p+1];bl+=pts[p+2]}pal.push([Math.round(r/k),Math.round(g/k),Math.round(bl/k)])}
+  while(pal.length<256)pal.push([0,0,0]);
+  const P=pal.length>256?pal.slice(0,256):pal;
+  const used=Math.min(256,reserved.length+boxes.length);
+  const cache=new Int16Array(32768).fill(-1),out=new Uint8Array(n);
+  for(let i=0;i<n;i++){const o=i<<2,r=px[o],g=px[o+1],b=px[o+2],key=((r>>3)<<10)|((g>>3)<<5)|(b>>3);
+    let c=cache[key];
+    if(c<0){let bd=1e9;for(let j=0;j<used;j++){const q=P[j],dr=q[0]-r,dg=q[1]-g,db=q[2]-b,d=dr*dr*2+dg*dg*4+db*db*3;if(d<bd){bd=d;c=j;if(!d)break}}cache[key]=c}
+    out[i]=c;}
+  return{pal:P,ind:out};
+}
+function lzw(ind,B){
+  const min=8,clear=256,eoi=257;let size=9,next=258;const dict=new Map();
+  const data=[];let cur=0,bits=0;
+  const emit=c=>{cur|=c<<bits;bits+=size;while(bits>=8){data.push(cur&255);cur>>>=8;bits-=8}};
+  emit(clear);let pre=ind[0];
+  for(let i=1;i<ind.length;i++){const k=ind[i],key=(pre<<8)|k,c=dict.get(key);
+    if(c!==undefined){pre=c;continue}
+    emit(pre);
+    if(next<4096){dict.set(key,next++);if(next>(1<<size)&&size<12)size++}
+    else{emit(clear);dict.clear();size=9;next=258}
+    pre=k;}
+  emit(pre);emit(eoi);if(bits>0)data.push(cur&255);
+  B.b(min);
+  for(let i=0;i<data.length;i+=255){const len=Math.min(255,data.length-i);B.b(len);for(let j=0;j<len;j++)B.b(data[i+j])}
+  B.b(0);
+}
+const yieldUI=()=>new Promise(r=>setTimeout(r,0));
+
+
+async function encode(onProg){
+  const {W,H}=geom(),n=frameCount();
+  const c=document.createElement("canvas");c.width=W;c.height=H;const ctx=c.getContext("2d",{willReadFrequently:true});
+  const list=[];let prev=null;
+  for(let i=0;i<n;i++){
+    draw(ctx,W,H,i*STEP);const d=ctx.getImageData(0,0,W,H).data;
+    let same=false;if(prev){const a=new Uint32Array(prev.buffer),b=new Uint32Array(d.buffer);same=true;for(let j=0;j<a.length;j++)if(a[j]!==b[j]){same=false;break}}
+    if(same)list[list.length-1].delay+=STEP;else{list.push({d,delay:STEP});prev=d}
+    if(i%6===0){onProg(.2*i/n);await yieldUI()}
+  }
+  const reserved=[...new Set(CK.map(k=>S[k].toLowerCase()).concat("#ffffff",S.lineColor.toLowerCase()))].map(hex);
+  const B=new Bytes();
+  B.s("GIF89a");B.w(W);B.w(H);B.b(0);B.b(0);B.b(0);
+  if(S.loop){B.b(0x21);B.b(0xFF);B.b(11);B.s("NETSCAPE2.0");B.b(3);B.b(1);B.w(0);B.b(0);}
+  for(let i=0;i<list.length;i++){
+    const {d,delay}=list[i],q=quantize(d,reserved);
+    B.b(0x21);B.b(0xF9);B.b(4);B.b(1<<2);B.w(Math.round(delay/10));B.b(0);B.b(0);
+    B.b(0x2C);B.w(0);B.w(0);B.w(W);B.w(H);B.b(0x87);
+    const ct=new Uint8Array(768);q.pal.forEach((p,j)=>{ct[j*3]=p[0];ct[j*3+1]=p[1];ct[j*3+2]=p[2]});B.arr(ct);
+    lzw(q.ind,B);
+    onProg(.2+.8*(i+1)/list.length);await yieldUI();
+  }
+  B.b(0x3B);
+  return{blob:new Blob([B.out()],{type:"image/gif"}),W,H,frames:list.length,secs:n*STEP/1000};
+}
+
+/* ---------- export ---------- */
+const plainDL={save:({filename,data})=>{const u=URL.createObjectURL(data),a=document.createElement("a");a.href=u;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),4000);return Promise.resolve({status:"saved"})}};
+let dl=null;
+((window.claude&&window.claude.use)?window.claude.use("downloads").catch(()=>null):Promise.resolve(plainDL)).then(x=>{dl=x;$("save").hidden=!dl||!outBlob;$("saveHint").hidden=!!dl&&!!outBlob});
+let outBlob=null,outURL=null;
+function setStatus(t,err){const s=$("status");s.textContent=t;s.classList.toggle("err",!!err)}
+$("make").addEventListener("click",async()=>{
+  const btn=$("make"),bar=$("prog"),fill=bar.querySelector("i");
+  btn.disabled=true;btn.textContent="生成中...";bar.hidden=false;fill.style.width="0%";setStatus("");
+  try{
+    await loadAllFonts();
+    const r=await encode(p=>fill.style.width=Math.round(p*100)+"%");
+    if(outURL)URL.revokeObjectURL(outURL);outBlob=r.blob;outURL=URL.createObjectURL(r.blob);
+    $("out").src=outURL;$("result").hidden=false;
+    const kb=r.blob.size/1024;
+    $("outMeta").textContent=r.W+"×"+r.H+" · "+r.frames+" 幀 · "+r.secs.toFixed(1)+" 秒 · "+(kb>1024?(kb/1024).toFixed(2)+" MB":Math.round(kb)+" KB");
+    $("save").hidden=!dl;$("saveHint").hidden=!!dl;
+    setStatus(kb>8192?"完成。檔案偏大，若要貼到社群或聊天軟體，可以改用較小的寬度。":"完成。");
+    $("result").scrollIntoView({behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth",block:"nearest"});
+  }catch(e){setStatus("生成失敗："+(e&&e.message||e)+"。可以試著縮小尺寸再試一次。",true)}
+  finally{btn.disabled=false;btn.textContent="生成 GIF";setTimeout(()=>bar.hidden=true,600)}
+});
+$("save").addEventListener("click",async()=>{
+  if(!dl||!outBlob)return;
+  const name=((S.name.trim()||"summon").replace(/[\\/:*?"<>|\s]+/g,"_").slice(0,40))+".gif";
+  try{await dl.save({filename:name,data:outBlob});setStatus("已交給瀏覽器下載："+name)}
+  catch(e){const c=e&&e.code;
+    if(c==="declined")setStatus("已取消下載。");
+    else if(c==="rate_limited")setStatus("下載視窗已經開著，請先處理它。");
+    else{setStatus("這個檢視無法直接下載，請在圖片上按右鍵（手機長按）另存。",true);$("save").hidden=true;$("saveHint").hidden=false}}
+});
+
+/* ---------- boot ---------- */
+if(window.UserFonts){
+  UserFonts.mount($("userFonts"));
+  UserFonts.onChange(list=>{
+    for(let i=FONTS.length-1;i>=0;i--)if(FONTS[i].user)FONTS.splice(i,1);
+    list.forEach(f=>FONTS.push({fam:f.family,lab:"自訂："+f.name,w:400,cjk:true,user:true}));
+    syncFonts();S.rankFont=fillSel(rsel,S.rankFont,false,true);refresh();
+  });
+}else $("userFonts").closest(".group").hidden=true;
+syncFonts();syncRank();
+setSource([{cv:sampleChar(),delay:100}],"範例角色",true);
+setPlay(true);
+})();
+</script>
+
+</body>
+</html>

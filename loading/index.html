@@ -5,9 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="description" content="上傳多張圖片、排序，產生帶「讀取中...」、LOADING 或進度條的循環 GIF。全部在瀏覽器內完成。">
 <title>Loading GIF 讀取中動畫產生器</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap">
+<script src="../shared/font-source.js"></script>
 <style>
 @font-face{font-family:"Chakra Petch";font-weight:600;font-style:normal;font-display:swap;src:url(../fonts/chakra-petch-600.woff) format("woff")}
 @font-face{font-family:"IBM Plex Mono";font-weight:400;font-style:normal;font-display:swap;src:url(../fonts/ibm-plex-mono-400.woff) format("woff")}
@@ -139,7 +137,7 @@ input[type=range]{accent-color:var(--accent);width:100%}
 <div class="app">
   <header class="top">
     <div class="brand"><span class="mark">LOADING<b>.GIF</b></span><h1>讀取中動畫產生器</h1></div>
-    <p class="lede">上傳多張圖片並排序，加上「讀取中...」、LOADING 或進度條，產生無限循環的 GIF 動畫。<br><span class="privacy">所有處理都在你的瀏覽器內完成，圖片不會上傳到任何伺服器。網頁只會向 Google Fonts 下載字型檔。</span><br><a class="home" href="../index.html">← 回到全部工具</a></p>
+    <p class="lede">上傳多張圖片並排序，加上「讀取中...」、LOADING 或進度條，產生無限循環的 GIF 動畫。<br><span class="privacy">所有處理都在你的瀏覽器內完成，圖片不會上傳到任何伺服器。<span id="fontNote"></span></span><br><a class="home" href="../index.html">← 回到全部工具</a></p>
   </header>
 
   <main class="layout">
@@ -204,6 +202,11 @@ input[type=range]{accent-color:var(--accent);width:100%}
       </div>
 
       <div class="group">
+        <h2>自訂字體</h2>
+        <div id="userFonts"></div>
+      </div>
+
+      <div class="group">
         <h2>顏色</h2>
         <div class="colors">
           <label class="color"><input type="color" id="bg" value="#ffffff"><span class="t">底色<span class="val" id="bgHex">#FFFFFF</span></span></label>
@@ -235,9 +238,12 @@ input[type=range]{accent-color:var(--accent);width:100%}
   </main>
 </div>
 
+<script src="../shared/user-fonts.js"></script>
 <script>
 (()=>{
 "use strict";
+if(window.FontSource)FontSource.ready.then(s=>{const n=document.getElementById("fontNote");if(!n)return;
+  n.textContent=s==="local"?"字型也放在本站，不會連到任何外部網站。":s==="google"?"字型暫時從 Google Fonts 下載（不會傳送你輸入的文字）。":"";});
 const $=id=>document.getElementById(id);
 
 /* ---------- fonts (all free, from Google Fonts) ---------- */
@@ -254,17 +260,9 @@ const FONTS=[
   {fam:"Bungee",lab:"Bungee（粗體招牌，僅英數）",w:400,cjk:false},
   {fam:"Fredoka",lab:"Fredoka（圓潤，僅英數）",w:600,cjk:false},
 ];
-const loadedLinks=new Map();
 function fontLoad(f,text){
-  const key=f.fam+"|"+text;
-  if(loadedLinks.has(key)) return loadedLinks.get(key);
-  const url="https://fonts.googleapis.com/css2?family="+encodeURIComponent(f.fam).replace(/%20/g,"+")+":wght@"+f.w+"&text="+encodeURIComponent(text)+"&display=block";
-  const p=new Promise(res=>{
-    const l=document.createElement("link");l.rel="stylesheet";l.href=url;
-    const done=()=>{Promise.race([document.fonts.load(f.w+' 40px "'+f.fam+'"',text),new Promise(r=>setTimeout(r,5000))]).catch(()=>{}).then(res)};
-    l.onload=done;l.onerror=()=>res();document.head.appendChild(l);
-  });
-  loadedLinks.set(key,p);return p;
+  if(f.user)return document.fonts.load('400 40px "'+f.fam+'"',text).catch(()=>{});
+  return window.FontSource?FontSource.load(f.fam,f.w,text):Promise.resolve();
 }
 
 /* ---------- state ---------- */
@@ -602,6 +600,16 @@ $("save").addEventListener("click",async()=>{
 });
 
 /* ---------- boot ---------- */
+if(window.UserFonts){
+  UserFonts.mount($("userFonts"));
+  UserFonts.onChange(list=>{
+    for(let i=FONTS.length-1;i>=0;i--)if(FONTS[i].user)FONTS.splice(i,1);
+    list.forEach(f=>FONTS.push({fam:f.family,lab:"自訂："+f.name,w:400,cjk:true,user:true}));
+    if(!FONTS.some(f=>f.fam===S.font))S.font="Noto Sans TC";
+    if(!FONTS.some(f=>f.fam===S.font2))S.font2="Press Start 2P";
+    syncMode();fillFonts($("font2"),false,S.font2);refresh();
+  });
+}else $("userFonts").closest(".group").hidden=true;
 renderThumbs();syncMode();setColor("bg",S.bg);setColor("fg",S.fg);refresh();
 })();
 </script>
